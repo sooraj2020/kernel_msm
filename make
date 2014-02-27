@@ -33,7 +33,7 @@ echo "Flashable zip made."
 echo "cleaning."
 find . -name '*ko' -exec rm '{}' \;
 find . -name 'zImage' -exec rm '{}' \;
-cd ~/work/m
+cd ~/work/k
 make "clean"
 make "mrproper"
 echo "everything completed."
