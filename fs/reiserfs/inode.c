@@ -1573,8 +1573,10 @@ struct dentry *reiserfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 			reiserfs_warning(sb, "reiserfs-13077",
 				"nfsd/reiserfs, fhtype=%d, len=%d - odd",
 				fh_type, fh_len);
-		fh_type = 5;
+		fh_type = fh_len;
 	}
+	if (fh_len < 2)
+		return NULL;
 
 	return reiserfs_get_dentry(sb, fid->raw[0], fid->raw[1],
 		(fh_type == 3 || fh_type >= 5) ? fid->raw[2] : 0);
@@ -1583,6 +1585,8 @@ struct dentry *reiserfs_fh_to_dentry(struct super_block *sb, struct fid *fid,
 struct dentry *reiserfs_fh_to_parent(struct super_block *sb, struct fid *fid,
 		int fh_len, int fh_type)
 {
+	if (fh_type > fh_len)
+		fh_type = fh_len;
 	if (fh_type < 4)
 		return NULL;
 
@@ -1592,13 +1596,12 @@ struct dentry *reiserfs_fh_to_parent(struct super_block *sb, struct fid *fid,
 		(fh_type == 6) ? fid->raw[5] : 0);
 }
 
-int reiserfs_encode_fh(struct dentry *dentry, __u32 * data, int *lenp,
-		       int need_parent)
+int reiserfs_encode_fh(struct inode *inode, __u32 * data, int *lenp,
+		       struct inode *parent)
 {
-	struct inode *inode = dentry->d_inode;
 	int maxlen = *lenp;
 
-	if (need_parent && (maxlen < 5)) {
+	if (parent && (maxlen < 5)) {
 		*lenp = 5;
 		return 255;
 	} else if (maxlen < 3) {
@@ -1610,20 +1613,15 @@ int reiserfs_encode_fh(struct dentry *dentry, __u32 * data, int *lenp,
 	data[1] = le32_to_cpu(INODE_PKEY(inode)->k_dir_id);
 	data[2] = inode->i_generation;
 	*lenp = 3;
-	/* no room for directory info? return what we've stored so far */
-	if (maxlen < 5 || !need_parent)
-		return 3;
-
-	spin_lock(&dentry->d_lock);
-	inode = dentry->d_parent->d_inode;
-	data[3] = inode->i_ino;
-	data[4] = le32_to_cpu(INODE_PKEY(inode)->k_dir_id);
-	*lenp = 5;
-	if (maxlen >= 6) {
-		data[5] = inode->i_generation;
-		*lenp = 6;
+	if (parent) {
+		data[3] = parent->i_ino;
+		data[4] = le32_to_cpu(INODE_PKEY(parent)->k_dir_id);
+		*lenp = 5;
+		if (maxlen >= 6) {
+			data[5] = parent->i_generation;
+			*lenp = 6;
+		}
 	}
-	spin_unlock(&dentry->d_lock);
 	return *lenp;
 }
 
@@ -1784,8 +1782,9 @@ int reiserfs_new_inode(struct reiserfs_transaction_handle *th,
 
 	BUG_ON(!th->t_trans_id);
 
-	dquot_initialize(inode);
+	reiserfs_write_unlock(inode->i_sb);
 	err = dquot_alloc_inode(inode);
+	reiserfs_write_lock(inode->i_sb);
 	if (err)
 		goto out_end_trans;
 	if (!dir->i_nlink) {
@@ -1981,8 +1980,10 @@ int reiserfs_new_inode(struct reiserfs_transaction_handle *th,
 
       out_end_trans:
 	journal_end(th, th->t_super, th->t_blocks_allocated);
+	reiserfs_write_unlock(inode->i_sb);
 	/* Drop can be outside and it needs more credits so it's better to have it outside */
 	dquot_drop(inode);
+	reiserfs_write_lock(inode->i_sb);
 	inode->i_flags |= S_NOQUOTA;
 	make_bad_inode(inode);
 
@@ -3105,10 +3106,9 @@ int reiserfs_setattr(struct dentry *dentry, struct iattr *attr)
 	/* must be turned off for recursive notify_change calls */
 	ia_valid = attr->ia_valid &= ~(ATTR_KILL_SUID|ATTR_KILL_SGID);
 
-	depth = reiserfs_write_lock_once(inode->i_sb);
 	if (is_quota_modification(inode, attr))
 		dquot_initialize(inode);
-
+	depth = reiserfs_write_lock_once(inode->i_sb);
 	if (attr->ia_valid & ATTR_SIZE) {
 		/* version 2 items will be caught by the s_maxbytes check
 		 ** done for us in vmtruncate
@@ -3172,7 +3172,9 @@ int reiserfs_setattr(struct dentry *dentry, struct iattr *attr)
 		error = journal_begin(&th, inode->i_sb, jbegin_count);
 		if (error)
 			goto out;
+		reiserfs_write_unlock_once(inode->i_sb, depth);
 		error = dquot_transfer(inode, attr);
+		depth = reiserfs_write_lock_once(inode->i_sb);
 		if (error) {
 			journal_end(&th, inode->i_sb, jbegin_count);
 			goto out;

@@ -705,7 +705,7 @@ void prune_icache_sb(struct super_block *sb, int nr_to_scan)
 		 * inode to the back of the list so we don't spin on it.
 		 */
 		if (!spin_trylock(&inode->i_lock)) {
-			list_move_tail(&inode->i_lru, &sb->s_inode_lru);
+			list_move(&inode->i_lru, &sb->s_inode_lru);
 			continue;
 		}
 
@@ -1524,6 +1524,71 @@ void touch_atime(struct path *path)
 }
 EXPORT_SYMBOL(touch_atime);
 
+/*
+ * The logic we want is
+ *
+ *	if suid or (sgid and xgrp)
+ *		remove privs
+ */
+int should_remove_suid(struct dentry *dentry)
+{
+	umode_t mode = dentry->d_inode->i_mode;
+	int kill = 0;
+
+	/* suid always must be killed */
+	if (unlikely(mode & S_ISUID))
+		kill = ATTR_KILL_SUID;
+
+	/*
+	 * sgid without any exec bits is just a mandatory locking mark; leave
+	 * it alone.  If some exec bits are set, it's a real sgid; kill it.
+	 */
+	if (unlikely((mode & S_ISGID) && (mode & S_IXGRP)))
+		kill |= ATTR_KILL_SGID;
+
+	if (unlikely(kill && !capable(CAP_FSETID) && S_ISREG(mode)))
+		return kill;
+
+	return 0;
+}
+EXPORT_SYMBOL(should_remove_suid);
+
+static int __remove_suid(struct dentry *dentry, int kill)
+{
+	struct iattr newattrs;
+
+	newattrs.ia_valid = ATTR_FORCE | kill;
+	return notify_change(dentry, &newattrs);
+}
+
+int file_remove_suid(struct file *file)
+{
+	struct dentry *dentry = file->f_path.dentry;
+	struct inode *inode = dentry->d_inode;
+	int killsuid;
+	int killpriv;
+	int error = 0;
+
+	/* Fast path for nothing security related */
+	if (IS_NOSEC(inode))
+		return 0;
+
+	killsuid = should_remove_suid(dentry);
+	killpriv = security_inode_need_killpriv(dentry);
+
+	if (killpriv < 0)
+		return killpriv;
+	if (killpriv)
+		error = security_inode_killpriv(dentry);
+	if (!error && killsuid)
+		error = __remove_suid(dentry, killsuid);
+	if (!error && (inode->i_sb->s_flags & MS_NOSEC))
+		inode->i_flags |= S_NOSEC;
+
+	return error;
+}
+EXPORT_SYMBOL(file_remove_suid);
+
 /**
  *	file_update_time	-	update mtime and ctime time
  *	@file: file accessed
@@ -1647,6 +1712,7 @@ void __init inode_init_early(void)
 					HASH_EARLY,
 					&i_hash_shift,
 					&i_hash_mask,
+					0,
 					0);
 
 	for (loop = 0; loop < (1U << i_hash_shift); loop++)
@@ -1677,6 +1743,7 @@ void __init inode_init(void)
 					0,
 					&i_hash_shift,
 					&i_hash_mask,
+					0,
 					0);
 
 	for (loop = 0; loop < (1U << i_hash_shift); loop++)

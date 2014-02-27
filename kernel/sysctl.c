@@ -370,7 +370,7 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_cfs_bandwidth_slice,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.proc_handler	= proc_dointvec,
 		.extra1		= &one,
 	},
 #endif
@@ -2040,7 +2040,7 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table, int 
 	int vleft, first = 1, err = 0;
 	unsigned long page = 0;
 	size_t left;
-	char *kbuf;
+	char *kbuf = NULL;
 
 	if (!data || !table->maxlen || !*lenp || (*ppos && !write)) {
 		*lenp = 0;

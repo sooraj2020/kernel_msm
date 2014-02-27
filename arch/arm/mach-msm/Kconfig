@@ -36,7 +36,6 @@ config ARCH_MSM7X27
 	select CLEANCACHE
 	select QCACHE
 	select MSM_PM2 if PM
-	select MSM_RUN_QUEUE_STATS if MSM_SOC_REV_A
 	select DONT_MAP_HOLE_AFTER_MEMBANK0
 	select MIGHT_HAVE_CACHE_L2X0
 	select MSM_MODEM_RESTART
@@ -139,7 +138,6 @@ config ARCH_MSM8X60
 	select MULTI_IRQ_HANDLER
 	select MSM_MULTIMEDIA_USE_ION
 	select MSM_PM8X60 if PM
-	select MSM_RUN_QUEUE_STATS
 	select ARM_HAS_SG_CHAIN
 
 config ARCH_MSM8960
@@ -173,7 +171,6 @@ config ARCH_MSM8960
 	select MULTI_IRQ_HANDLER
 	select MSM_PM8X60 if PM
 	select HOLES_IN_ZONE if SPARSEMEM
-	select MSM_RUN_QUEUE_STATS
 	select ARM_HAS_SG_CHAIN
 	select MSM_KRAIT_WFE_FIXUP
 	select MSM_IOMMU_GPU_SYNC
@@ -265,7 +262,6 @@ config ARCH_MSM8974
 	select MSM_AUDIO_QDSP6V2 if SND_SOC
 	select MSM_RPM_REGULATOR_SMD
 	select ARM_HAS_SG_CHAIN
-	select MSM_RUN_QUEUE_STATS
 
 config ARCH_MPQ8092
 	bool "MPQ8092"
@@ -345,7 +341,6 @@ config ARCH_MSM8625
 	select ARCH_MSM_CORTEXMP
 	select MULTI_IRQ_HANDLER
 	select ARM_TICKET_LOCKS
-	select MSM_RUN_QUEUE_STATS
 	select MIGHT_HAVE_CACHE_L2X0
 	select ARM_HAS_SG_CHAIN
 
@@ -414,7 +409,6 @@ config  ARCH_MSM_KRAITMP
 	select HAVE_ARCH_HAS_CURRENT_TIMER
 	select MSM_JTAG if CORESIGHT_ETM
 	bool
-	select HAVE_HW_BRKPT_RESERVED_RW_ACCESS
 
 config  ARCH_MSM_CORTEXMP
 	select MSM_SMP
@@ -425,7 +419,6 @@ config  MSM_KRAIT_WFE_FIXUP
 
 config  ARCH_MSM_CORTEX_A5
 	bool
-	select HAVE_HW_BRKPT_RESERVED_RW_ACCESS
 
 config ARCH_MSM7X27A
 	bool
@@ -880,6 +873,12 @@ config MACH_APQ8064_LIQUID
 	help
 	  Support for the Qualcomm APQ8064 LIQUID device.
 
+config MACH_APQ8064_OC
+	depends on ARCH_APQ8064
+	bool "APQ8064 OC"
+	help
+	  Overclock Qualcomm APQ8064.
+
 config MACH_MPQ8064_CDP
 	depends on ARCH_APQ8064
 	bool "MPQ8064 CDP"
@@ -1300,20 +1299,6 @@ config MSM_PCIE
 	  Enables the PCIe functionality by configures PCIe core on
 	  MSM chipset and by enabling the ARM PCI framework extension.
 
-config MSM_RPC_SDIO_XPRT
-	depends on MSM_SDIO_AL
-	default y
-	bool "MSM SDIO XPRT Layer"
-	help
-	  SDIO Transport Layer for RPC Rouer
-
-config MSM_RPC_SDIO_DEBUG
-	depends on MSM_RPC_SDIO_XPRT
-	default y
-	bool "MSM SDIO XPRT debug support"
-	help
-	  Support for debugging SDIO XPRT
-
 config MSM_SMD_DEBUG
 	depends on MSM_SMD
 	default y
@@ -1321,21 +1306,6 @@ config MSM_SMD_DEBUG
 	help
 	  Support for debugging the SMD for communication
 	  between the ARM9 and ARM11
-
-config MSM_SDIO_AL
-	depends on ((ARCH_MSM7X30 || MACH_MSM8X60_FUSN_FFA || MACH_TYPE_MSM8X60_FUSION) && HAS_WAKELOCK)
-	default y
-	tristate "SDIO-Abstraction-Layer"
-	help
-	  Support MSM<->MDM Communication over SDIO bus.
-	  MDM SDIO-Client should have pipes support.
-
-config MSM_SDIO_DMUX
-	bool "SDIO Data Mux Driver"
-	depends on MSM_SDIO_AL
-	default n
-	help
-	  Support Muxed Data Channels over SDIO interface.
 
 config MSM_BAM_DMUX
 	bool "BAM Data Mux Driver"
@@ -1396,16 +1366,6 @@ config MSM_SMD_NMEA
 
 	  If in doubt, say yes.
 
-config MSM_SDIO_TTY
-	bool "SDIO TTY Driver"
-	depends on MSM_SDIO_AL
-	default n
-	help
-	  Provides a TTY driver SDIO TTY
-	  This driver can be used by user space
-	  applications for passing data through the
-	  SDIO interface.
-
 config MSM_HSIC_TTY
 	bool "HSIC TTY Driver"
 	default n
@@ -1442,13 +1402,6 @@ config MSM_SMD_PKT
 
 	  If in doubt, say yes.
 
-config MSM_SDIO_CMUX
-	bool "SDIO CMUX Driver"
-	depends on MSM_SDIO_AL
-	default n
-	help
-	  Provides a Muxed port interface over SDIO QMI
-
 config MSM_DSPS
 	bool "Sensors DSPS driver"
 	depends on (MSM_PIL && (ARCH_MSM8X60 || ARCH_MSM8960))
@@ -1460,13 +1413,6 @@ config MSM_DSPS
 	  themself.
 	  The number of clocks and their name may vary between targets.
 	  It also triggers the PIL to load the DSPS firmware.
-
-config MSM_SDIO_CTL
-	bool "SDIO CTL Driver"
-	depends on MSM_SDIO_CMUX
-	default n
-	help
-	  Provides a binary SDIO control port interface.
 
 config MSM_ONCRPCROUTER
 	depends on MSM_SMD
@@ -1575,15 +1521,6 @@ config MSM_RMT_STORAGE_CLIENT_STATS
 	  Collects performance statistics and shows this information
 	  through a debugfs file rmt_storage_stats.
 
-config MSM_SDIO_SMEM
-        depends on MSM_SDIO_AL
-        default n
-        bool "SDIO SMEM for remote storage"
-        help
-          Copies data from remote MDM9K memory to local MSM8x60
-	  memory. Used by remote storage client to shadow
-	  MDM9K filesystem.
-
 config MSM_DALRPC
 	bool "DAL RPC support"
 	default n
@@ -1601,7 +1538,7 @@ if CPU_FREQ_MSM
 
 config MSM_CPU_FREQ_SET_MIN_MAX
 	bool "Set Min/Max CPU frequencies."
-	default n
+	default y
 	help
 	  Allow setting min and max CPU frequencies. Sysfs can be used
 	  to override these values.
@@ -1609,14 +1546,20 @@ config MSM_CPU_FREQ_SET_MIN_MAX
 config MSM_CPU_FREQ_MAX
 	int "Max CPU Frequency"
 	depends on MSM_CPU_FREQ_SET_MIN_MAX
-	default 384000
+	default 1512000
 
 config MSM_CPU_FREQ_MIN
 	int "Min CPU Frequency"
 	depends on MSM_CPU_FREQ_SET_MIN_MAX
-	default 245760
+	default 384000
 
 endif # CPU_FREQ_MSM
+
+config USERSPACE_VOLTAGE_CONTROL
+	bool "Enable Userspace CPU Voltage Control"
+	default y
+	help
+	  Userspace Voltage Control
 
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -2606,5 +2549,19 @@ config MSM_CPU_PWRCTL
 	  Droop detector mechanism can adversely affect krait plls during
 	  stand alone power collapse operation. Selecting this option
 	  ensures that they are always off.
+
+config MSM_USE_USER_ACCESSIBLE_TIMERS
+	bool "Enables mapping an MSM timer counter page to user space."
+	depends on ARM_USE_USER_ACCESSIBLE_TIMERS
+	help
+	  Enables MSM-specific user accessible timers via a shared
+	  memory page containing the cycle counter.
+
+config FORCE_FAST_CHARGE
+	bool "Force AC charge mode at will"
+	default y
+	help
+	  A simple sysfs interface to force adapters that
+	  are detected as USB to charge as AC.
 
 endif

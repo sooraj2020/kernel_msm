@@ -644,7 +644,7 @@ static void xlvbd_release_gendisk(struct blkfront_info *info)
 	spin_unlock_irqrestore(&info->io_lock, flags);
 
 	/* Flush gnttab callback work. Must be done with no locks held. */
-	flush_work_sync(&info->work);
+	flush_work(&info->work);
 
 	del_gendisk(info->gd);
 
@@ -693,7 +693,7 @@ static void blkif_free(struct blkfront_info *info, int suspend)
 	spin_unlock_irq(&info->io_lock);
 
 	/* Flush gnttab callback work. Must be done with no locks held. */
-	flush_work_sync(&info->work);
+	flush_work(&info->work);
 
 	/* Free resources associated with old device channel. */
 	if (info->ring_ref != GRANT_INVALID_REF) {
@@ -1303,13 +1303,16 @@ static void blkback_changed(struct xenbus_device *dev,
 	case XenbusStateReconfiguring:
 	case XenbusStateReconfigured:
 	case XenbusStateUnknown:
-	case XenbusStateClosed:
 		break;
 
 	case XenbusStateConnected:
 		blkfront_connect(info);
 		break;
 
+	case XenbusStateClosed:
+		if (dev->state == XenbusStateClosed)
+			break;
+		/* Missed the backend's Closing state -- fallthrough */
 	case XenbusStateClosing:
 		blkfront_closing(info);
 		break;

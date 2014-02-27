@@ -1424,7 +1424,7 @@ static ssize_t picolcd_operation_mode_store(struct device *dev,
 		buf += 10;
 		cnt -= 10;
 	}
-	if (!report)
+	if (!report || report->maxfield != 1)
 		return -EINVAL;
 
 	while (cnt > 0 && (buf[cnt-1] == '\n' || buf[cnt-1] == '\r'))
@@ -2741,7 +2741,7 @@ static void __exit picolcd_exit(void)
 {
 	hid_unregister_driver(&picolcd_driver);
 #ifdef CONFIG_HID_PICOLCD_FB
-	flush_work_sync(&picolcd_fb_cleanup);
+	flush_work(&picolcd_fb_cleanup);
 	WARN_ON(fb_pending);
 #endif
 }

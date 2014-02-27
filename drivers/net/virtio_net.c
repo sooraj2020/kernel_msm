@@ -511,14 +511,14 @@ static void refill_work(struct work_struct *work)
 	/* In theory, this can happen: if we don't get any buffers in
 	 * we will *never* try to fill again. */
 	if (still_empty)
-		queue_delayed_work(system_nrt_wq, &vi->refill, HZ/2);
+		schedule_delayed_work(&vi->refill, HZ/2);
 }
 
 static int virtnet_poll(struct napi_struct *napi, int budget)
 {
 	struct virtnet_info *vi = container_of(napi, struct virtnet_info, napi);
 	void *buf;
-	unsigned int len, received = 0;
+	unsigned int r, len, received = 0;
 
 again:
 	while (received < budget &&
@@ -530,13 +530,14 @@ again:
 
 	if (vi->num < vi->max / 2) {
 		if (!try_fill_recv(vi, GFP_ATOMIC))
-			queue_delayed_work(system_nrt_wq, &vi->refill, 0);
+			schedule_delayed_work(&vi->refill, 0);
 	}
 
 	/* Out of packets? */
 	if (received < budget) {
+		r = virtqueue_enable_cb_prepare(vi->rvq);
 		napi_complete(napi);
-		if (unlikely(!virtqueue_enable_cb(vi->rvq)) &&
+		if (unlikely(virtqueue_poll(vi->rvq, r)) &&
 		    napi_schedule_prep(napi)) {
 			virtqueue_disable_cb(vi->rvq);
 			__napi_schedule(napi);
@@ -731,7 +732,7 @@ static int virtnet_open(struct net_device *dev)
 
 	/* Make sure we have some buffers: if oom use wq. */
 	if (!try_fill_recv(vi, GFP_KERNEL))
-		queue_delayed_work(system_nrt_wq, &vi->refill, 0);
+		schedule_delayed_work(&vi->refill, 0);
 
 	virtnet_napi_enable(vi);
 	return 0;
@@ -1215,7 +1216,7 @@ static int virtnet_restore(struct virtio_device *vdev)
 	netif_device_attach(vi->dev);
 
 	if (!try_fill_recv(vi, GFP_KERNEL))
-		queue_delayed_work(system_nrt_wq, &vi->refill, 0);
+		schedule_delayed_work(&vi->refill, 0);
 
 	return 0;
 }

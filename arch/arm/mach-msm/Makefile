@@ -6,8 +6,6 @@ obj-y += timer.o
 endif
 obj-y += clock.o clock-voter.o clock-dummy.o
 obj-y += modem_notifier.o subsystem_map.o
-obj-$(CONFIG_CPU_FREQ_MSM) += cpufreq.o
-obj-$(CONFIG_DEBUG_FS) += nohlt.o clock-debug.o
 obj-$(CONFIG_KEXEC) += msm_kexec.o
 
 obj-$(CONFIG_MSM_PROC_COMM) += proc_comm.o
@@ -30,7 +28,6 @@ obj-$(CONFIG_ARCH_MSM_SCORPIONMP) += perf_event_msm_l2.o
 obj-$(CONFIG_ARCH_MSM_KRAIT) += msm-krait-l2-accessors.o pmu.o perf_event_msm_krait_l2.o
 obj-$(CONFIG_ARCH_MSM_KRAIT) += krait-scm.o
 obj-$(CONFIG_ARCH_MSM7X27A) += pmu.o
-obj-$(CONFIG_DEBUG_FS) += perf_debug.o
 
 ifndef CONFIG_MSM_SMP
 obj-$(CONFIG_ARCH_MSM_SCORPION) += msm_fault_handlers.o
@@ -87,17 +84,13 @@ obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_ARCH_FSM9XXX) += sirc-fsm9xxx.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-rfkill.o
-obj-$(CONFIG_MSM_SDIO_AL) += sdio_al.o
-obj-$(CONFIG_MSM_SDIO_AL) += sdio_al_test.o
-obj-$(CONFIG_MSM_SDIO_AL) += sdio_al_dloader.o
-obj-$(CONFIG_MSM_SDIO_DMUX) += sdio_dmux.o
 obj-$(CONFIG_MSM_BAM_DMUX) += bam_dmux.o
 obj-$(CONFIG_MSM_SMD_LOGGING) += smem_log.o
 obj-$(CONFIG_MSM_IPC_LOGGING) += ipc_logging.o
 ifdef CONFIG_DEBUG_FS
 obj-$(CONFIG_MSM_IPC_LOGGING) += ipc_logging_debug.o
 endif
-obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o smd_private.o
+obj-$(CONFIG_MSM_SMD) += smd.o remote_spinlock.o smd_private.o
 obj-y += socinfo.o
 ifndef CONFIG_ARCH_MSM9615
 ifndef CONFIG_ARCH_APQ8064
@@ -124,13 +117,10 @@ endif
 endif
 
 obj-$(CONFIG_MSM_HSIC_TTY) += hsic_tty.o
-obj-$(CONFIG_MSM_SDIO_TTY) += sdio_tty.o
 obj-$(CONFIG_MSM_SMD_TTY) += smd_tty.o
 obj-$(CONFIG_MSM_SMD_QMI) += smd_qmi.o
 obj-$(CONFIG_MSM_SMD_PKT) += smd_pkt.o
-obj-$(CONFIG_MSM_SDIO_CMUX) += sdio_cmux.o
 obj-$(CONFIG_MSM_DSPS) += msm_dsps.o
-obj-$(CONFIG_MSM_SDIO_CTL) += sdio_ctl.o
 obj-$(CONFIG_MSM_SMD_NMEA) += smd_nmea.o
 obj-$(CONFIG_MSM_RESET_MODEM) += reset_modem.o
 obj-$(CONFIG_MSM_IPC_ROUTER_SMD_XPRT) += ipc_router_smd_xprt.o
@@ -138,12 +128,13 @@ obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_device.o
 obj-$(CONFIG_MSM_IPC_ROUTER) += ipc_router.o
 obj-$(CONFIG_MSM_IPC_ROUTER)+= ipc_socket.o
+ifdef CONFIG_MSM_SMD_LOGGING
 obj-$(CONFIG_DEBUG_FS) += smd_rpc_sym.o
+endif
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_servers.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_clients.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_xdr.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += rpcrouter_smd_xprt.o
-obj-$(CONFIG_MSM_RPC_SDIO_XPRT) += rpcrouter_sdio_xprt.o
 obj-$(CONFIG_MSM_RPC_PING) += ping_mdm_rpc_client.o
 obj-$(CONFIG_MSM_RPC_PROC_COMM_TEST) += proc_comm_test.o
 obj-$(CONFIG_MSM_RPC_PING) += ping_mdm_rpc_client.o ping_apps_server.o
@@ -267,7 +258,7 @@ obj-$(CONFIG_MACH_MSM7X25_SURF) += board-msm7x27.o devices-msm7x25.o
 obj-$(CONFIG_MACH_MSM7X25_FFA) += board-msm7x27.o devices-msm7x25.o
 obj-$(CONFIG_ARCH_MSM8960) += clock-local.o clock-dss-8960.o clock-8960.o clock-rpm.o clock-pll.o
 obj-$(CONFIG_ARCH_MSM8960) += footswitch-8x60.o
-obj-$(CONFIG_ARCH_MSM8960) += acpuclock-8960.o acpuclock-8960ab.o
+#obj-$(CONFIG_ARCH_MSM8960) += acpuclock-8960.o acpuclock-8960ab.o
 obj-$(CONFIG_ARCH_MSM8960) += memory_topology.o
 obj-$(CONFIG_ARCH_MSM8960) += saw-regulator.o
 obj-$(CONFIG_ARCH_MSM8960) += devices-8960.o
@@ -315,7 +306,6 @@ obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 obj-$(CONFIG_HTC_PWRSINK) += htc_pwrsink.o
 obj-$(CONFIG_HTC_HEADSET) += htc_headset.o
 obj-$(CONFIG_MSM_RMT_STORAGE_CLIENT) += rmt_storage_client.o
-obj-$(CONFIG_MSM_SDIO_SMEM) += sdio_smem.o
 obj-$(CONFIG_MSM_RPM) += rpm.o
 ifdef CONFIG_MSM_RPM
 	obj-$(CONFIG_ARCH_APQ8064) += rpm_resources.o
@@ -391,3 +381,6 @@ ifdef CONFIG_MSM_CPR
 obj-$(CONFIG_DEBUG_FS) += msm_cpr-debug.o
 endif
 obj-$(CONFIG_MSM_CPU_PWRCTL) +=  msm_cpu_pwrctl.o
+obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
+
+obj-$(CONFIG_CPU_FREQ_MSM) += cpufreq.o

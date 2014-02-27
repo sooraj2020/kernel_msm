@@ -166,6 +166,7 @@ that only one external action is invoked at a time.
 #include <net/lib80211.h>
 
 #include "ipw2100.h"
+#include "ipw.h"
 
 #define IPW2100_VERSION "git-1.2.2"
 
@@ -1946,6 +1947,9 @@ static int ipw2100_wdev_init(struct net_device *dev)
 		wdev->wiphy->bands[IEEE80211_BAND_2GHZ] = bg_band;
 	}
 
+	wdev->wiphy->cipher_suites = ipw_cipher_suites;
+	wdev->wiphy->n_cipher_suites = ARRAY_SIZE(ipw_cipher_suites);
+
 	set_wiphy_dev(wdev->wiphy, &priv->pci_dev->dev);
 	if (wiphy_register(wdev->wiphy)) {
 		ipw2100_down(priv);
@@ -2174,8 +2178,7 @@ static void isr_indicate_rf_kill(struct ipw2100_priv *priv, u32 status)
 
 	/* Make sure the RF Kill check timer is running */
 	priv->stop_rf_kill = 0;
-	cancel_delayed_work(&priv->rf_kill);
-	schedule_delayed_work(&priv->rf_kill, round_jiffies_relative(HZ));
+	mod_delayed_work(system_wq, &priv->rf_kill, round_jiffies_relative(HZ));
 }
 
 static void send_scan_event(void *data)
@@ -4315,9 +4318,8 @@ static int ipw_radio_kill_sw(struct ipw2100_priv *priv, int disable_radio)
 					  "disabled by HW switch\n");
 			/* Make sure the RF_KILL check timer is running */
 			priv->stop_rf_kill = 0;
-			cancel_delayed_work(&priv->rf_kill);
-			schedule_delayed_work(&priv->rf_kill,
-					      round_jiffies_relative(HZ));
+			mod_delayed_work(system_wq, &priv->rf_kill,
+					 round_jiffies_relative(HZ));
 		} else
 			schedule_reset(priv);
 	}

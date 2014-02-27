@@ -393,7 +393,7 @@ void hci_le_start_enc(struct hci_conn *conn, __le16 ediv, __u8 rand[8],
 }
 EXPORT_SYMBOL(hci_le_start_enc);
 
-void hci_le_ltk_reply(struct hci_conn *conn, u8 ltk[16])
+void hci_le_ltk_reply(struct hci_conn *conn, __u8 ltk[16])
 {
 	struct hci_dev *hdev = conn->hdev;
 	struct hci_cp_le_ltk_reply cp;
@@ -403,7 +403,7 @@ void hci_le_ltk_reply(struct hci_conn *conn, u8 ltk[16])
 	memset(&cp, 0, sizeof(cp));
 
 	cp.handle = cpu_to_le16(conn->handle);
-	memcpy(cp.ltk, ltk, sizeof(ltk));
+	memcpy(cp.ltk, ltk, sizeof(*ltk));
 
 	hci_send_cmd(hdev, HCI_OP_LE_LTK_REPLY, sizeof(cp), &cp);
 }
@@ -624,7 +624,7 @@ int hci_conn_del(struct hci_conn *conn)
 	wake_lock_destroy(&conn->idle_lock);
 	del_timer(&conn->disc_timer);
 	del_timer(&conn->smp_timer);
-	__cancel_delayed_work(&conn->rssi_update_work);
+	cancel_delayed_work(&conn->rssi_update_work);
 	del_timer(&conn->encrypt_pause_timer);
 
 	if (conn->type == ACL_LINK) {

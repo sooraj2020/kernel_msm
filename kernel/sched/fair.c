@@ -1393,13 +1393,14 @@ static inline bool cfs_bandwidth_used(void)
 	return static_key_false(&__cfs_bandwidth_used);
 }
 
-void account_cfs_bandwidth_used(int enabled, int was_enabled)
+void cfs_bandwidth_usage_inc(void)
 {
-	/* only need to count groups transitioning between enabled/!enabled */
-	if (enabled && !was_enabled)
-		static_key_slow_inc(&__cfs_bandwidth_used);
-	else if (!enabled && was_enabled)
-		static_key_slow_dec(&__cfs_bandwidth_used);
+	static_key_slow_inc(&__cfs_bandwidth_used);
+}
+
+void cfs_bandwidth_usage_dec(void)
+{
+	static_key_slow_dec(&__cfs_bandwidth_used);
 }
 #else /* HAVE_JUMP_LABEL */
 static bool cfs_bandwidth_used(void)
@@ -1407,7 +1408,8 @@ static bool cfs_bandwidth_used(void)
 	return true;
 }
 
-void account_cfs_bandwidth_used(int enabled, int was_enabled) {}
+void cfs_bandwidth_usage_inc(void) {}
+void cfs_bandwidth_usage_dec(void) {}
 #endif /* HAVE_JUMP_LABEL */
 
 /*
@@ -1655,6 +1657,8 @@ static void throttle_cfs_rq(struct cfs_rq *cfs_rq)
 	cfs_rq->throttled_timestamp = rq->clock;
 	raw_spin_lock(&cfs_b->lock);
 	list_add_tail_rcu(&cfs_rq->throttled_list, &cfs_b->throttled_cfs_rq);
+	if (!cfs_b->timer_active)
+		__start_cfs_bandwidth(cfs_b);
 	raw_spin_unlock(&cfs_b->lock);
 }
 
@@ -1767,6 +1771,13 @@ static int do_sched_cfs_period_timer(struct cfs_bandwidth *cfs_b, int overrun)
 	if (idle)
 		goto out_unlock;
 
+	/*
+	 * if we have relooped after returning idle once, we need to update our
+	 * status as actually running, so that other cpus doing
+	 * __start_cfs_bandwidth will stop trying to cancel us.
+	 */
+	cfs_b->timer_active = 1;
+
 	__refill_cfs_bandwidth_runtime(cfs_b);
 
 	if (!throttled) {
@@ -1827,7 +1838,13 @@ static const u64 min_bandwidth_expiration = 2 * NSEC_PER_MSEC;
 /* how long we wait to gather additional slack before distributing */
 static const u64 cfs_bandwidth_slack_period = 5 * NSEC_PER_MSEC;
 
-/* are we near the end of the current quota period? */
+/*
+ * Are we near the end of the current quota period?
+ *
+ * Requires cfs_b->lock for hrtimer_expires_remaining to be safe against the
+ * hrtimer base being cleared by __hrtimer_start_range_ns. In the case of
+ * migrate_hrtimers, base is never cleared, so we are fine.
+ */
 static int runtime_refresh_within(struct cfs_bandwidth *cfs_b, u64 min_expire)
 {
 	struct hrtimer *refresh_timer = &cfs_b->period_timer;
@@ -1903,10 +1920,12 @@ static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 	u64 expires;
 
 	/* confirm we're still not at a refresh boundary */
-	if (runtime_refresh_within(cfs_b, min_bandwidth_expiration))
-		return;
-
 	raw_spin_lock(&cfs_b->lock);
+	if (runtime_refresh_within(cfs_b, min_bandwidth_expiration)) {
+		raw_spin_unlock(&cfs_b->lock);
+		return;
+	}
+
 	if (cfs_b->quota != RUNTIME_INF && cfs_b->runtime > slice) {
 		runtime = cfs_b->runtime;
 		cfs_b->runtime = 0;
@@ -2031,11 +2050,11 @@ void __start_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	 * (timer_active==0 becomes visible before the hrtimer call-back
 	 * terminates).  In either case we ensure that it's re-programmed
 	 */
-	while (unlikely(hrtimer_active(&cfs_b->period_timer))) {
+	while (unlikely(hrtimer_active(&cfs_b->period_timer)) &&
+	       hrtimer_try_to_cancel(&cfs_b->period_timer) < 0) {
+		/* bounce the lock to allow do_sched_cfs_period_timer to run */
 		raw_spin_unlock(&cfs_b->lock);
-		/* ensure cfs_b->lock is available while we wait */
-		hrtimer_cancel(&cfs_b->period_timer);
-
+		cpu_relax();
 		raw_spin_lock(&cfs_b->lock);
 		/* if someone else restarted the timer then we're done */
 		if (cfs_b->timer_active)
@@ -2052,7 +2071,7 @@ static void destroy_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
 	hrtimer_cancel(&cfs_b->slack_timer);
 }
 
-void unthrottle_offline_cfs_rqs(struct rq *rq)
+static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 {
 	struct cfs_rq *cfs_rq;
 
@@ -2106,7 +2125,7 @@ static inline struct cfs_bandwidth *tg_cfs_bandwidth(struct task_group *tg)
 	return NULL;
 }
 static inline void destroy_cfs_bandwidth(struct cfs_bandwidth *cfs_b) {}
-void unthrottle_offline_cfs_rqs(struct rq *rq) {}
+static inline void unthrottle_offline_cfs_rqs(struct rq *rq) {}
 
 #endif /* CONFIG_CFS_BANDWIDTH */
 
@@ -2122,7 +2141,7 @@ static void hrtick_start_fair(struct rq *rq, struct task_struct *p)
 
 	WARN_ON(task_rq(p) != rq);
 
-	if (cfs_rq->nr_running > 1) {
+	if (rq->cfs.h_nr_running > 1) {
 		u64 slice = sched_slice(cfs_rq, se);
 		u64 ran = se->sum_exec_runtime - se->prev_sum_exec_runtime;
 		s64 delta = slice - ran;
@@ -2146,8 +2165,7 @@ static void hrtick_start_fair(struct rq *rq, struct task_struct *p)
 
 /*
  * called from enqueue/dequeue and updates the hrtick when the
- * current task is from our class and nr_running is low enough
- * to matter.
+ * current task is from our class.
  */
 static void hrtick_update(struct rq *rq)
 {
@@ -2156,8 +2174,7 @@ static void hrtick_update(struct rq *rq)
 	if (!hrtick_enabled(rq) || curr->sched_class != &fair_sched_class)
 		return;
 
-	if (cfs_rq_of(&curr->se)->nr_running < sched_nr_latency)
-		hrtick_start_fair(rq, curr);
+	hrtick_start_fair(rq, curr);
 }
 #else /* !CONFIG_SCHED_HRTICK */
 static inline void
@@ -2331,6 +2348,23 @@ static unsigned long cpu_avg_load_per_task(int cpu)
 	return 0;
 }
 
+static void record_wakee(struct task_struct *p)
+{
+	/*
+	 * Rough decay (wiping) for cost saving, don't worry
+	 * about the boundary, really active task won't care
+	 * about the loss.
+	 */
+	if (jiffies > current->wakee_flip_decay_ts + HZ) {
+		current->wakee_flips = 0;
+		current->wakee_flip_decay_ts = jiffies;
+	}
+
+	if (current->last_wakee != p) {
+		current->last_wakee = p;
+		current->wakee_flips++;
+	}
+}
 
 static void task_waking_fair(struct task_struct *p)
 {
@@ -2351,6 +2385,7 @@ static void task_waking_fair(struct task_struct *p)
 #endif
 
 	se->vruntime -= min_vruntime;
+	record_wakee(p);
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -2469,6 +2504,28 @@ static inline unsigned long effective_load(struct task_group *tg, int cpu,
 
 #endif
 
+static int wake_wide(struct task_struct *p)
+{
+	int factor = this_cpu_read(sd_llc_size);
+
+	/*
+	 * Yeah, it's the switching-frequency, could means many wakee or
+	 * rapidly switch, use factor here will just help to automatically
+	 * adjust the loose-degree, so bigger node will lead to more pull.
+	 */
+	if (p->wakee_flips > factor) {
+		/*
+		 * wakee is somewhat hot, it needs certain amount of cpu
+		 * resource, so if waker is far more hot, prefer to leave
+		 * it alone.
+		 */
+		if (current->wakee_flips > (factor * p->wakee_flips))
+			return 1;
+	}
+
+	return 0;
+}
+
 static int wake_affine(struct sched_domain *sd, struct task_struct *p, int sync)
 {
 	s64 this_load, load;
@@ -2477,6 +2534,13 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p, int sync)
 	struct task_group *tg;
 	unsigned long weight;
 	int balanced;
+
+	/*
+	 * If we wake multiple tasks be careful to not bounce
+	 * ourselves around too much.
+	 */
+	if (wake_wide(p))
+		return 0;
 
 	idx	  = sd->wake_idx;
 	this_cpu  = smp_processor_id();
@@ -2634,25 +2698,18 @@ find_idlest_cpu(struct sched_group *group, struct task_struct *p, int this_cpu)
  */
 static int select_idle_sibling(struct task_struct *p, int target)
 {
-	int cpu = smp_processor_id();
-	int prev_cpu = task_cpu(p);
 	struct sched_domain *sd;
 	struct sched_group *sg;
-	int i;
+	int i = task_cpu(p);
+
+	if (idle_cpu(target))
+		return target;
 
 	/*
-	 * If the task is going to be woken-up on this cpu and if it is
-	 * already idle, then it is the right target.
+	 * If the prevous cpu is cache affine and idle, don't be stupid.
 	 */
-	if (target == cpu && idle_cpu(cpu))
-		return cpu;
-
-	/*
-	 * If the task is going to be woken-up on the cpu where it previously
-	 * ran and if it is currently idle, then it the right target.
-	 */
-	if (target == prev_cpu && idle_cpu(prev_cpu))
-		return prev_cpu;
+	if (i != target && cpus_share_cache(i, target) && idle_cpu(i))
+		return i;
 
 	/*
 	 * Otherwise, iterate the domains and find an elegible idle cpu.
@@ -2666,7 +2723,7 @@ static int select_idle_sibling(struct task_struct *p, int target)
 				goto next;
 
 			for_each_cpu(i, sched_group_cpus(sg)) {
-				if (!idle_cpu(i))
+				if (i == target || !idle_cpu(i))
 					goto next;
 			}
 
@@ -2721,7 +2778,7 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 		 * If power savings logic is enabled for a domain, see if we
 		 * are not overloaded, if so, don't balance wider.
 		 */
-		if (tmp->flags & (SD_POWERSAVINGS_BALANCE|SD_PREFER_LOCAL)) {
+		if (tmp->flags & (SD_PREFER_LOCAL)) {
 			unsigned long power = 0;
 			unsigned long nr_running = 0;
 			unsigned long capacity;
@@ -2733,9 +2790,6 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 			}
 
 			capacity = DIV_ROUND_CLOSEST(power, SCHED_POWER_SCALE);
-
-			if (tmp->flags & SD_POWERSAVINGS_BALANCE)
-				nr_running /= 2;
 
 			if (nr_running < capacity)
 				want_sd = 0;
@@ -3439,14 +3493,6 @@ struct sd_lb_stats {
 	unsigned int  busiest_group_weight;
 
 	int group_imb; /* Is there imbalance in this sd */
-#if defined(CONFIG_SCHED_MC) || defined(CONFIG_SCHED_SMT)
-	int power_savings_balance; /* Is powersave balance needed for this sd */
-	struct sched_group *group_min; /* Least loaded group in sd */
-	struct sched_group *group_leader; /* Group which relieves group_min */
-	unsigned long min_load_per_task; /* load_per_task in group_min */
-	unsigned long leader_nr_running; /* Nr running of group_leader */
-	unsigned long min_nr_running; /* Nr running of group_min */
-#endif
 };
 
 /*
@@ -3490,148 +3536,6 @@ static inline int get_sd_load_idx(struct sched_domain *sd,
 	return load_idx;
 }
 
-
-#if defined(CONFIG_SCHED_MC) || defined(CONFIG_SCHED_SMT)
-/**
- * init_sd_power_savings_stats - Initialize power savings statistics for
- * the given sched_domain, during load balancing.
- *
- * @sd: Sched domain whose power-savings statistics are to be initialized.
- * @sds: Variable containing the statistics for sd.
- * @idle: Idle status of the CPU at which we're performing load-balancing.
- */
-static inline void init_sd_power_savings_stats(struct sched_domain *sd,
-	struct sd_lb_stats *sds, enum cpu_idle_type idle)
-{
-	/*
-	 * Busy processors will not participate in power savings
-	 * balance.
-	 */
-	if (idle == CPU_NOT_IDLE || !(sd->flags & SD_POWERSAVINGS_BALANCE))
-		sds->power_savings_balance = 0;
-	else {
-		sds->power_savings_balance = 1;
-		sds->min_nr_running = ULONG_MAX;
-		sds->leader_nr_running = 0;
-	}
-}
-
-/**
- * update_sd_power_savings_stats - Update the power saving stats for a
- * sched_domain while performing load balancing.
- *
- * @group: sched_group belonging to the sched_domain under consideration.
- * @sds: Variable containing the statistics of the sched_domain
- * @local_group: Does group contain the CPU for which we're performing
- * 		load balancing ?
- * @sgs: Variable containing the statistics of the group.
- */
-static inline void update_sd_power_savings_stats(struct sched_group *group,
-	struct sd_lb_stats *sds, int local_group, struct sg_lb_stats *sgs)
-{
-
-	if (!sds->power_savings_balance)
-		return;
-
-	/*
-	 * If the local group is idle or completely loaded
-	 * no need to do power savings balance at this domain
-	 */
-	if (local_group && (sds->this_nr_running >= sgs->group_capacity ||
-				!sds->this_nr_running))
-		sds->power_savings_balance = 0;
-
-	/*
-	 * If a group is already running at full capacity or idle,
-	 * don't include that group in power savings calculations
-	 */
-	if (!sds->power_savings_balance ||
-		sgs->sum_nr_running >= sgs->group_capacity ||
-		!sgs->sum_nr_running)
-		return;
-
-	/*
-	 * Calculate the group which has the least non-idle load.
-	 * This is the group from where we need to pick up the load
-	 * for saving power
-	 */
-	if ((sgs->sum_nr_running < sds->min_nr_running) ||
-	    (sgs->sum_nr_running == sds->min_nr_running &&
-	     group_first_cpu(group) > group_first_cpu(sds->group_min))) {
-		sds->group_min = group;
-		sds->min_nr_running = sgs->sum_nr_running;
-		sds->min_load_per_task = sgs->sum_weighted_load /
-						sgs->sum_nr_running;
-	}
-
-	/*
-	 * Calculate the group which is almost near its
-	 * capacity but still has some space to pick up some load
-	 * from other group and save more power
-	 */
-	if (sgs->sum_nr_running + 1 > sgs->group_capacity)
-		return;
-
-	if (sgs->sum_nr_running > sds->leader_nr_running ||
-	    (sgs->sum_nr_running == sds->leader_nr_running &&
-	     group_first_cpu(group) < group_first_cpu(sds->group_leader))) {
-		sds->group_leader = group;
-		sds->leader_nr_running = sgs->sum_nr_running;
-	}
-}
-
-/**
- * check_power_save_busiest_group - see if there is potential for some power-savings balance
- * @sds: Variable containing the statistics of the sched_domain
- *	under consideration.
- * @this_cpu: Cpu at which we're currently performing load-balancing.
- * @imbalance: Variable to store the imbalance.
- *
- * Description:
- * Check if we have potential to perform some power-savings balance.
- * If yes, set the busiest group to be the least loaded group in the
- * sched_domain, so that it's CPUs can be put to idle.
- *
- * Returns 1 if there is potential to perform power-savings balance.
- * Else returns 0.
- */
-static inline int check_power_save_busiest_group(struct sd_lb_stats *sds,
-					int this_cpu, unsigned long *imbalance)
-{
-	if (!sds->power_savings_balance)
-		return 0;
-
-	if (sds->this != sds->group_leader ||
-			sds->group_leader == sds->group_min)
-		return 0;
-
-	*imbalance = sds->min_load_per_task;
-	sds->busiest = sds->group_min;
-
-	return 1;
-
-}
-#else /* CONFIG_SCHED_MC || CONFIG_SCHED_SMT */
-static inline void init_sd_power_savings_stats(struct sched_domain *sd,
-	struct sd_lb_stats *sds, enum cpu_idle_type idle)
-{
-	return;
-}
-
-static inline void update_sd_power_savings_stats(struct sched_group *group,
-	struct sd_lb_stats *sds, int local_group, struct sg_lb_stats *sgs)
-{
-	return;
-}
-
-static inline int check_power_save_busiest_group(struct sd_lb_stats *sds,
-					int this_cpu, unsigned long *imbalance)
-{
-	return 0;
-}
-#endif /* CONFIG_SCHED_MC || CONFIG_SCHED_SMT */
-
-
 unsigned long default_scale_freq_power(struct sched_domain *sd, int cpu)
 {
 	return SCHED_POWER_SCALE;
@@ -3660,15 +3564,22 @@ unsigned long __weak arch_scale_smt_power(struct sched_domain *sd, int cpu)
 unsigned long scale_rt_power(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
-	u64 total, available;
+	u64 total, available, age_stamp, avg;
 
-	total = sched_avg_period() + (rq->clock - rq->age_stamp);
+	/*
+	 * Since we're reading these variables without serialization make sure
+	 * we read them once before doing sanity checks on them.
+	 */
+	age_stamp = ACCESS_ONCE(rq->age_stamp);
+	avg = ACCESS_ONCE(rq->rt_avg);
 
-	if (unlikely(total < rq->rt_avg)) {
+	total = sched_avg_period() + (rq->clock - age_stamp);
+
+	if (unlikely(total < avg)) {
 		/* Ensures that power won't end up being negative */
 		available = 0;
 	} else {
-		available = total - rq->rt_avg;
+		available = total - avg;
 	}
 
 	if (unlikely((s64)total < SCHED_POWER_SCALE))
@@ -3933,7 +3844,6 @@ static inline void update_sd_lb_stats(struct sched_domain *sd, int this_cpu,
 	if (child && child->flags & SD_PREFER_SIBLING)
 		prefer_sibling = 1;
 
-	init_sd_power_savings_stats(sd, sds, idle);
 	load_idx = get_sd_load_idx(sd, idle);
 
 	do {
@@ -3982,7 +3892,6 @@ static inline void update_sd_lb_stats(struct sched_domain *sd, int this_cpu,
 			sds->group_imb = sgs.group_imb;
 		}
 
-		update_sd_power_savings_stats(sg, sds, local_group, &sgs);
 		sg = sg->next;
 	} while (sg != sd->groups);
 }
@@ -4281,12 +4190,6 @@ force_balance:
 	return sds.busiest;
 
 out_balanced:
-	/*
-	 * There is no obvious imbalance. But check if we can do some balancing
-	 * to save power.
-	 */
-	if (check_power_save_busiest_group(&sds, this_cpu, imbalance))
-		return sds.busiest;
 ret:
 	*imbalance = 0;
 	return NULL;
@@ -4364,28 +4267,6 @@ static int need_active_balance(struct sched_domain *sd, int idle,
 		 */
 		if ((sd->flags & SD_ASYM_PACKING) && busiest_cpu > this_cpu)
 			return 1;
-
-		/*
-		 * The only task running in a non-idle cpu can be moved to this
-		 * cpu in an attempt to completely freeup the other CPU
-		 * package.
-		 *
-		 * The package power saving logic comes from
-		 * find_busiest_group(). If there are no imbalance, then
-		 * f_b_g() will return NULL. However when sched_mc={1,2} then
-		 * f_b_g() will select a group from which a running task may be
-		 * pulled to this cpu in order to make the other package idle.
-		 * If there is no opportunity to make a package idle and if
-		 * there are no imbalance, then f_b_g() will return NULL and no
-		 * action will be taken in load_balance_newidle().
-		 *
-		 * Under normal task pull operation due to imbalance, there
-		 * will be more than one task in the source run queue and
-		 * move_tasks() will succeed.  ld_moved will be true and this
-		 * active balance code will not be triggered.
-		 */
-		if (sched_mc_power_savings < POWERSAVINGS_BALANCE_WAKEUP)
-			return 0;
 	}
 
 	return unlikely(sd->nr_balance_failed > sd->cache_nice_tries+2);
@@ -4623,7 +4504,7 @@ void idle_balance(int this_cpu, struct rq *this_rq)
 
 	raw_spin_lock(&this_rq->lock);
 
-	if (pulled_task || time_after(jiffies, this_rq->next_balance)) {
+	if (!pulled_task || time_after(jiffies, this_rq->next_balance)) {
 		/*
 		 * We are going idle. next_balance may be set based on
 		 * a busy processor. So reset next_balance.
@@ -4719,104 +4600,15 @@ static struct {
 	unsigned long next_balance;     /* in jiffy units */
 } nohz ____cacheline_aligned;
 
-#if defined(CONFIG_SCHED_MC) || defined(CONFIG_SCHED_SMT)
-/**
- * lowest_flag_domain - Return lowest sched_domain containing flag.
- * @cpu:	The cpu whose lowest level of sched domain is to
- *		be returned.
- * @flag:	The flag to check for the lowest sched_domain
- *		for the given cpu.
- *
- * Returns the lowest sched_domain of a cpu which contains the given flag.
- */
-static inline struct sched_domain *lowest_flag_domain(int cpu, int flag)
-{
-	struct sched_domain *sd;
-
-	for_each_domain(cpu, sd)
-		if (sd->flags & flag)
-			break;
-
-	return sd;
-}
-
-/**
- * for_each_flag_domain - Iterates over sched_domains containing the flag.
- * @cpu:	The cpu whose domains we're iterating over.
- * @sd:		variable holding the value of the power_savings_sd
- *		for cpu.
- * @flag:	The flag to filter the sched_domains to be iterated.
- *
- * Iterates over all the scheduler domains for a given cpu that has the 'flag'
- * set, starting from the lowest sched_domain to the highest.
- */
-#define for_each_flag_domain(cpu, sd, flag) \
-	for (sd = lowest_flag_domain(cpu, flag); \
-		(sd && (sd->flags & flag)); sd = sd->parent)
-
-/**
- * find_new_ilb - Finds the optimum idle load balancer for nomination.
- * @cpu:	The cpu which is nominating a new idle_load_balancer.
- *
- * Returns:	Returns the id of the idle load balancer if it exists,
- *		Else, returns >= nr_cpu_ids.
- *
- * This algorithm picks the idle load balancer such that it belongs to a
- * semi-idle powersavings sched_domain. The idea is to try and avoid
- * completely idle packages/cores just for the purpose of idle load balancing
- * when there are other idle cpu's which are better suited for that job.
- */
-static int find_new_ilb(int cpu)
+static inline int find_new_ilb(int call_cpu)
 {
 	int ilb = cpumask_first(nohz.idle_cpus_mask);
-	struct sched_group *ilbg;
-	struct sched_domain *sd;
 
-	/*
-	 * Have idle load balancer selection from semi-idle packages only
-	 * when power-aware load balancing is enabled
-	 */
-	if (!(sched_smt_power_savings || sched_mc_power_savings))
-		goto out_done;
-
-	/*
-	 * Optimize for the case when we have no idle CPUs or only one
-	 * idle CPU. Don't walk the sched_domain hierarchy in such cases
-	 */
-	if (cpumask_weight(nohz.idle_cpus_mask) < 2)
-		goto out_done;
-
-	rcu_read_lock();
-	for_each_flag_domain(cpu, sd, SD_POWERSAVINGS_BALANCE) {
-		ilbg = sd->groups;
-
-		do {
-			if (ilbg->group_weight !=
-				atomic_read(&ilbg->sgp->nr_busy_cpus)) {
-				ilb = cpumask_first_and(nohz.idle_cpus_mask,
-							sched_group_cpus(ilbg));
-				goto unlock;
-			}
-
-			ilbg = ilbg->next;
-
-		} while (ilbg != sd->groups);
-	}
-unlock:
-	rcu_read_unlock();
-
-out_done:
 	if (ilb < nr_cpu_ids && idle_cpu(ilb))
 		return ilb;
 
 	return nr_cpu_ids;
 }
-#else /*  (CONFIG_SCHED_MC || CONFIG_SCHED_SMT) */
-static inline int find_new_ilb(int call_cpu)
-{
-	return nr_cpu_ids;
-}
-#endif
 
 /*
  * Kick a CPU to do the nohz balancing, if it is time for it. We pick the
@@ -4846,7 +4638,7 @@ static void nohz_balancer_kick(int cpu)
 	return;
 }
 
-static inline void clear_nohz_tick_stopped(int cpu)
+static inline void nohz_balance_exit_idle(int cpu)
 {
 	if (unlikely(test_bit(NOHZ_TICK_STOPPED, nohz_flags(cpu)))) {
 		cpumask_clear_cpu(cpu, nohz.idle_cpus_mask);
@@ -4886,28 +4678,23 @@ void set_cpu_sd_state_idle(void)
 }
 
 /*
- * This routine will record that this cpu is going idle with tick stopped.
+ * This routine will record that the cpu is going idle with tick stopped.
  * This info will be used in performing idle load balancing in the future.
  */
-void select_nohz_load_balancer(int stop_tick)
+void nohz_balance_enter_idle(int cpu)
 {
-	int cpu = smp_processor_id();
-
 	/*
 	 * If this cpu is going down, then nothing needs to be done.
 	 */
 	if (!cpu_active(cpu))
 		return;
 
-	if (stop_tick) {
-		if (test_bit(NOHZ_TICK_STOPPED, nohz_flags(cpu)))
-			return;
+	if (test_bit(NOHZ_TICK_STOPPED, nohz_flags(cpu)))
+		return;
 
-		cpumask_set_cpu(cpu, nohz.idle_cpus_mask);
-		atomic_inc(&nohz.nr_cpus);
-		set_bit(NOHZ_TICK_STOPPED, nohz_flags(cpu));
-	}
-	return;
+	cpumask_set_cpu(cpu, nohz.idle_cpus_mask);
+	atomic_inc(&nohz.nr_cpus);
+	set_bit(NOHZ_TICK_STOPPED, nohz_flags(cpu));
 }
 
 static int __cpuinit sched_ilb_notifier(struct notifier_block *nfb,
@@ -4915,7 +4702,7 @@ static int __cpuinit sched_ilb_notifier(struct notifier_block *nfb,
 {
 	switch (action & ~CPU_TASKS_FROZEN) {
 	case CPU_DYING:
-		clear_nohz_tick_stopped(smp_processor_id());
+		nohz_balance_exit_idle(smp_processor_id());
 		return NOTIFY_OK;
 	default:
 		return NOTIFY_DONE;
@@ -5037,14 +4824,15 @@ static void nohz_idle_balance(int this_cpu, enum cpu_idle_type idle)
 		if (need_resched())
 			break;
 
-		raw_spin_lock_irq(&this_rq->lock);
-		update_rq_clock(this_rq);
-		update_cpu_load(this_rq);
-		raw_spin_unlock_irq(&this_rq->lock);
+		rq = cpu_rq(balance_cpu);
+
+		raw_spin_lock_irq(&rq->lock);
+		update_rq_clock(rq);
+		update_idle_cpu_load(rq);
+		raw_spin_unlock_irq(&rq->lock);
 
 		rebalance_domains(balance_cpu, CPU_IDLE);
 
-		rq = cpu_rq(balance_cpu);
 		if (time_after(this_rq->next_balance, rq->next_balance))
 			this_rq->next_balance = rq->next_balance;
 	}
@@ -5075,7 +4863,7 @@ static inline int nohz_kick_needed(struct rq *rq, int cpu)
 	* busy tick after returning from idle, we will update the busy stats.
 	*/
 	set_cpu_sd_state_busy();
-	clear_nohz_tick_stopped(cpu);
+	nohz_balance_exit_idle(cpu);
 
 	/*
 	 * None are in tickless mode and hence no need for NOHZ idle load
@@ -5163,11 +4951,17 @@ void trigger_load_balance(struct rq *rq, int cpu)
 static void rq_online_fair(struct rq *rq)
 {
 	update_sysctl();
+
+	/* Ensure any throttled groups are reachable by pick_next_task */
+	unthrottle_offline_cfs_rqs(rq);
 }
 
 static void rq_offline_fair(struct rq *rq)
 {
 	update_sysctl();
+
+	/* Ensure any throttled groups are reachable by pick_next_task */
+	unthrottle_offline_cfs_rqs(rq);
 }
 
 #endif /* CONFIG_SMP */
@@ -5206,11 +5000,15 @@ static void task_fork_fair(struct task_struct *p)
 	cfs_rq = task_cfs_rq(current);
 	curr = cfs_rq->curr;
 
-	if (unlikely(task_cpu(p) != this_cpu)) {
-		rcu_read_lock();
-		__set_task_cpu(p, this_cpu);
-		rcu_read_unlock();
-	}
+	/*
+	 * Not only the cpu but also the task_group of the parent might have
+	 * been changed after parent->se.parent,cfs_rq were copied to
+	 * child->se.parent,cfs_rq. So call __set_task_cpu() to make those
+	 * of child point to valid ones.
+	 */
+	rcu_read_lock();
+	__set_task_cpu(p, this_cpu);
+	rcu_read_unlock();
 
 	update_curr(cfs_rq);
 
@@ -5463,7 +5261,8 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
 		se->cfs_rq = parent->my_q;
 
 	se->my_q = cfs_rq;
-	update_load_set(&se->load, 0);
+	/* guarantee group entities always have weight */
+	update_load_set(&se->load, NICE_0_LOAD);
 	se->parent = parent;
 }
 
@@ -5527,7 +5326,7 @@ static unsigned int get_rr_interval_fair(struct rq *rq, struct task_struct *task
 	 * idle runqueue:
 	 */
 	if (rq->cfs.load.weight)
-		rr_interval = NS_TO_JIFFIES(sched_slice(&rq->cfs, se));
+		rr_interval = NS_TO_JIFFIES(sched_slice(cfs_rq_of(se), se));
 
 	return rr_interval;
 }

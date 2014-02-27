@@ -6,6 +6,7 @@
  * Address space accounting code	<alan@lxorguk.ukuu.org.uk>
  */
 
+#include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/backing-dev.h>
 #include <linux/mm.h>
@@ -390,6 +391,34 @@ find_vma_prepare(struct mm_struct *mm, unsigned long addr,
 	*rb_link = __rb_link;
 	*rb_parent = __rb_parent;
 	return vma;
+}
+
+static unsigned long count_vma_pages_range(struct mm_struct *mm,
+		unsigned long addr, unsigned long end)
+{
+	unsigned long nr_pages = 0;
+	struct vm_area_struct *vma;
+
+	/* Find first overlaping mapping */
+	vma = find_vma_intersection(mm, addr, end);
+	if (!vma)
+		return 0;
+
+	nr_pages = (min(end, vma->vm_end) -
+		max(addr, vma->vm_start)) >> PAGE_SHIFT;
+
+	/* Iterate over the rest of the overlaps */
+	for (vma = vma->vm_next; vma; vma = vma->vm_next) {
+		unsigned long overlap_len;
+
+		if (vma->vm_start > end)
+			break;
+
+		overlap_len = min(end, vma->vm_end) - vma->vm_start;
+		nr_pages += overlap_len >> PAGE_SHIFT;
+	}
+
+	return nr_pages;
 }
 
 void __vma_link_rb(struct mm_struct *mm, struct vm_area_struct *vma,
@@ -959,15 +988,13 @@ static inline unsigned long round_hint_to_min(unsigned long hint)
  * The caller must hold down_write(&current->mm->mmap_sem).
  */
 
-static unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
+unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 			unsigned long len, unsigned long prot,
 			unsigned long flags, unsigned long pgoff)
 {
 	struct mm_struct * mm = current->mm;
 	struct inode *inode;
 	vm_flags_t vm_flags;
-	int error;
-	unsigned long reqprot = prot;
 
 	/*
 	 * Does the application expect PROT_READ to imply PROT_EXEC?
@@ -1089,38 +1116,8 @@ static unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
 		}
 	}
 
-	error = security_file_mmap(file, reqprot, prot, flags, addr, 0);
-	if (error)
-		return error;
-
 	return mmap_region(file, addr, len, flags, vm_flags, pgoff);
 }
-
-unsigned long do_mmap(struct file *file, unsigned long addr,
-	unsigned long len, unsigned long prot,
-	unsigned long flag, unsigned long offset)
-{
-	if (unlikely(offset + PAGE_ALIGN(len) < offset))
-		return -EINVAL;
-	if (unlikely(offset & ~PAGE_MASK))
-		return -EINVAL;
-	return do_mmap_pgoff(file, addr, len, prot, flag, offset >> PAGE_SHIFT);
-}
-EXPORT_SYMBOL(do_mmap);
-
-unsigned long vm_mmap(struct file *file, unsigned long addr,
-	unsigned long len, unsigned long prot,
-	unsigned long flag, unsigned long offset)
-{
-	unsigned long ret;
-	struct mm_struct *mm = current->mm;
-
-	down_write(&mm->mmap_sem);
-	ret = do_mmap(file, addr, len, prot, flag, offset);
-	up_write(&mm->mmap_sem);
-	return ret;
-}
-EXPORT_SYMBOL(vm_mmap);
 
 SYSCALL_DEFINE6(mmap_pgoff, unsigned long, addr, unsigned long, len,
 		unsigned long, prot, unsigned long, flags,
@@ -1136,15 +1133,19 @@ SYSCALL_DEFINE6(mmap_pgoff, unsigned long, addr, unsigned long, len,
 		file = fget(fd);
 		if (!file)
 			goto out;
+		if (is_file_hugepages(file))
+			len = ALIGN(len, huge_page_size(hstate_file(file)));
 	} else if (flags & MAP_HUGETLB) {
 		struct user_struct *user = NULL;
+
+		len = ALIGN(len, huge_page_size(&default_hstate));
 		/*
 		 * VM_NORESERVE is used because the reservations will be
 		 * taken when vm_ops->mmap() is called
 		 * A dummy user value is used because we are not locking
 		 * memory so no accounting is necessary
 		 */
-		file = hugetlb_file_setup(HUGETLB_ANON_FILE, addr, len,
+		file = hugetlb_file_setup(HUGETLB_ANON_FILE, len,
 						VM_NORESERVE, &user,
 						HUGETLB_ANONHUGE_INODE);
 		if (IS_ERR(file))
@@ -1153,10 +1154,7 @@ SYSCALL_DEFINE6(mmap_pgoff, unsigned long, addr, unsigned long, len,
 
 	flags &= ~(MAP_EXECUTABLE | MAP_DENYWRITE);
 
-	down_write(&current->mm->mmap_sem);
-	retval = do_mmap_pgoff(file, addr, len, prot, flags, pgoff);
-	up_write(&current->mm->mmap_sem);
-
+	retval = vm_mmap_pgoff(file, addr, len, prot, flags, pgoff);
 	if (file)
 		fput(file);
 out:
@@ -1247,6 +1245,23 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 	unsigned long charged = 0;
 	struct inode *inode =  file ? file->f_path.dentry->d_inode : NULL;
 
+	/* Check against address space limit. */
+	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) {
+		unsigned long nr_pages;
+
+		/*
+		 * MAP_FIXED may remove pages of mappings that intersects with
+		 * requested mapping. Account for the pages it would unmap.
+		 */
+		if (!(vm_flags & MAP_FIXED))
+			return -ENOMEM;
+
+		nr_pages = count_vma_pages_range(mm, addr, addr + len);
+
+		if (!may_expand_vm(mm, (len >> PAGE_SHIFT) - nr_pages))
+			return -ENOMEM;
+	}
+
 	/* Clear old maps */
 	error = -ENOMEM;
 munmap_back:
@@ -1256,10 +1271,6 @@ munmap_back:
 			return -ENOMEM;
 		goto munmap_back;
 	}
-
-	/* Check against address space limit. */
-	if (!may_expand_vm(mm, len >> PAGE_SHIFT))
-		return -ENOMEM;
 
 	/*
 	 * Set 'VM_NORESERVE' if we should not account for the
@@ -1613,7 +1624,9 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 	if (addr & ~PAGE_MASK)
 		return -EINVAL;
 
-	return arch_rebalance_pgtables(addr, len);
+	addr = arch_rebalance_pgtables(addr, len);
+	error = security_mmap_addr(addr);
+	return error ? error : addr;
 }
 
 EXPORT_SYMBOL(get_unmapped_area);
@@ -1626,7 +1639,7 @@ struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 	if (mm) {
 		/* Check the cache first. */
 		/* (Cache hit rate is typically around 35%.) */
-		vma = mm->mmap_cache;
+		vma = ACCESS_ONCE(mm->mmap_cache);
 		if (!(vma && vma->vm_end > addr && vma->vm_start <= addr)) {
 			struct rb_node * rb_node;
 
@@ -1802,7 +1815,7 @@ int expand_downwards(struct vm_area_struct *vma,
 		return -ENOMEM;
 
 	address &= PAGE_MASK;
-	error = security_file_mmap(NULL, 0, 0, 0, address, 1);
+	error = security_mmap_addr(address);
 	if (error)
 		return error;
 
@@ -1836,9 +1849,28 @@ int expand_downwards(struct vm_area_struct *vma,
 	return error;
 }
 
+/*
+ * Note how expand_stack() refuses to expand the stack all the way to
+ * abut the next virtual mapping, *unless* that mapping itself is also
+ * a stack mapping. We want to leave room for a guard page, after all
+ * (the guard page itself is not added here, that is done by the
+ * actual page faulting logic)
+ *
+ * This matches the behavior of the guard page logic (see mm/memory.c:
+ * check_stack_guard_page()), which only allows the guard page to be
+ * removed under these circumstances.
+ */
 #ifdef CONFIG_STACK_GROWSUP
 int expand_stack(struct vm_area_struct *vma, unsigned long address)
 {
+	struct vm_area_struct *next;
+
+	address &= PAGE_MASK;
+	next = vma->vm_next;
+	if (next && next->vm_start == address + PAGE_SIZE) {
+		if (!(next->vm_flags & VM_GROWSUP))
+			return -ENOMEM;
+	}
 	return expand_upwards(vma, address);
 }
 
@@ -1861,6 +1893,14 @@ find_extend_vma(struct mm_struct *mm, unsigned long addr)
 #else
 int expand_stack(struct vm_area_struct *vma, unsigned long address)
 {
+	struct vm_area_struct *prev;
+
+	address &= PAGE_MASK;
+	prev = vma->vm_prev;
+	if (prev && prev->vm_end == address) {
+		if (!(prev->vm_flags & VM_GROWSDOWN))
+			return -ENOMEM;
+	}
 	return expand_downwards(vma, address);
 }
 
@@ -1927,7 +1967,7 @@ static void unmap_region(struct mm_struct *mm,
 	unmap_vmas(&tlb, vma, start, end, &nr_accounted, NULL);
 	vm_unacct_memory(nr_accounted);
 	free_pgtables(&tlb, vma, prev ? prev->vm_end : FIRST_USER_ADDRESS,
-				 next ? next->vm_start : 0);
+				 next ? next->vm_start : USER_PGTABLES_CEILING);
 	tlb_finish_mmu(&tlb, start, end);
 }
 
@@ -2139,7 +2179,6 @@ int do_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 
 	return 0;
 }
-EXPORT_SYMBOL(do_munmap);
 
 int vm_munmap(unsigned long start, size_t len)
 {
@@ -2186,10 +2225,6 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	len = PAGE_ALIGN(len);
 	if (!len)
 		return addr;
-
-	error = security_file_mmap(NULL, 0, 0, 0, addr, 1);
-	if (error)
-		return error;
 
 	flags = VM_DATA_DEFAULT_FLAGS | VM_ACCOUNT | mm->def_flags;
 
@@ -2315,7 +2350,7 @@ void exit_mmap(struct mm_struct *mm)
 	unmap_vmas(&tlb, vma, 0, -1, &nr_accounted, NULL);
 	vm_unacct_memory(nr_accounted);
 
-	free_pgtables(&tlb, vma, FIRST_USER_ADDRESS, 0);
+	free_pgtables(&tlb, vma, FIRST_USER_ADDRESS, USER_PGTABLES_CEILING);
 	tlb_finish_mmu(&tlb, 0, -1);
 
 	/*
@@ -2532,10 +2567,6 @@ int install_special_mapping(struct mm_struct *mm,
 
 	vma->vm_ops = &special_mapping_vmops;
 	vma->vm_private_data = pages;
-
-	ret = security_file_mmap(NULL, 0, 0, 0, vma->vm_start, 1);
-	if (ret)
-		goto out;
 
 	ret = insert_vm_struct(mm, vma);
 	if (ret)

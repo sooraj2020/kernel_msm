@@ -19,7 +19,6 @@
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 #include <linux/clk.h>
-#include <linux/android_pmem.h>
 #include <linux/msm_rotator.h>
 #include <linux/io.h>
 #include <mach/msm_rotator_imem.h>
@@ -319,7 +318,7 @@ int msm_rotator_imem_allocate(int requestor)
 		rc = 1;
 #endif
 	if (rc == 1) {
-		cancel_delayed_work(&msm_rotator_dev->imem_clk_work);
+		cancel_delayed_work_sync(&msm_rotator_dev->imem_clk_work);
 		if (msm_rotator_dev->imem_clk_state != CLK_EN
 			&& msm_rotator_dev->imem_clk) {
 			clk_prepare_enable(msm_rotator_dev->imem_clk);
@@ -1225,10 +1224,6 @@ static int get_img(struct msmfb_data *fbd, int domain,
 	struct file *file = NULL;
 	int put_needed, fb_num;
 #endif
-#ifdef CONFIG_ANDROID_PMEM
-	unsigned long vstart;
-#endif
-
 	*p_need = 0;
 
 #ifdef CONFIG_FB
@@ -1259,27 +1254,14 @@ static int get_img(struct msmfb_data *fbd, int domain,
 	}
 #endif
 
-#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 	return msm_rotator_iommu_map_buf(fbd->memory_id, domain, start,
 		len, p_ihdl, secure);
-#endif
-#ifdef CONFIG_ANDROID_PMEM
-	if (!get_pmem_file(fbd->memory_id, start, &vstart, len, p_file))
-		return 0;
-	else
-		return -ENOMEM;
-#endif
 
 }
 
 static void put_img(struct file *p_file, struct ion_handle *p_ihdl,
 	int domain, unsigned int secure)
 {
-#ifdef CONFIG_ANDROID_PMEM
-	if (p_file != NULL)
-		put_pmem_file(p_file);
-#endif
-
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 	if (!IS_ERR_OR_NULL(p_ihdl)) {
 		pr_debug("%s(): p_ihdl %p\n", __func__, p_ihdl);
@@ -1556,7 +1538,7 @@ static int msm_rotator_do_rotate_sub(
 	msm_rotator_wait_for_fence(commit_info->acq_fen);
 	commit_info->acq_fen = NULL;
 
-	cancel_delayed_work(&msm_rotator_dev->rot_clk_work);
+	cancel_delayed_work_sync(&msm_rotator_dev->rot_clk_work);
 	if (msm_rotator_dev->rot_clk_state != CLK_EN) {
 		enable_rot_clks();
 		msm_rotator_dev->rot_clk_state = CLK_EN;
@@ -1654,10 +1636,8 @@ static int msm_rotator_do_rotate_sub(
 
 	msm_rotator_dev->processing = 1;
 	iowrite32(0x1, MSM_ROTATOR_START);
-	mutex_unlock(&msm_rotator_dev->rotator_lock);
 	wait_event(msm_rotator_dev->wq,
 		   (msm_rotator_dev->processing == 0));
-	mutex_lock(&msm_rotator_dev->rotator_lock);
 	status = (unsigned char)ioread32(MSM_ROTATOR_INTR_STATUS);
 	if ((status & 0x03) != 0x01) {
 		pr_err("%s(): AXI Bus Error, issuing SW_RESET\n", __func__);
