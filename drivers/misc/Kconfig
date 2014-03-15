@@ -522,6 +522,21 @@ config WL127X_RFKILL
 	 Creates an rfkill entry in sysfs for power control of Bluetooth
 	 TI wl127x chips.
 
+config APANIC
+	bool "Android kernel panic diagnostics driver"
+	default n
+	---help---
+	 Driver which handles kernel panics and attempts to write
+	 critical debugging data to flash.
+
+config APANIC_PLABEL
+	string "Android panic dump flash partition label"
+	depends on APANIC
+	default "kpanic"
+	---help---
+	 If your platform uses a different flash partition label for storing
+ 	 crashdumps, enter it here.
+
 config TSIF
 	depends on ARCH_MSM
 	tristate "TSIF (Transport Stream InterFace) support"
@@ -547,6 +562,18 @@ config TSIF_CHRDEV
 
 	  To compile this driver as module, choose M here: the
 	  module will be called tsif_chrdev.
+
+config TSIF_NM32X_62X_DEV
+	tristate "NM32x/62x TSIF device"
+	depends on TSIF
+	default n
+	---help---
+	  This driver uses low level TSIF interface. It provides Newport 
+	  Media NM32x/62x device useable from user space programs: one 
+	  can read TSIF stream from this device.
+
+	  To compile this driver as module, choose M here: the
+	  module will be called nm32x_62x-tsi.
 
 config TSIF_DEBUG
 	bool "Turn on debugging information for tsif driver"
@@ -588,19 +615,12 @@ config PMIC8XXX_VIBRATOR
 	  on the PM8XXX chips. The vibrator is controlled using the
 	  timed output class.
 
-config ANDROID_VIBRATOR
-	bool "Android vibrator support"
-	depends on ANDROID_TIMED_OUTPUT
-	default n
-	help
-	  This option enalbes device driver support for Android Vibrator driver.
-	  Some functions should be given by platform data for enable PWM, Motor IC, etc.
-
-config TOUCHSENSE_VIBRATOR
-	bool "Immersion Touchsense vibrator support"
-	help
-	  This option enables device driver support for Immersion Touchsense
-	  vibrator.
+config PMIC8XXX_VIBRATOR_PWM
+        tristate "Qualcomm Vibrator support for PMIC8XXX with pwm function"
+        help
+          This option enables device driver support for the vibrator
+          on the PM8XXX chips. The vibrator is controlled using the
+          timed output class.
 
 config PMIC8XXX_NFC
 	tristate "Qualcomm PM8XXX support for Near Field Communication"
@@ -642,6 +662,29 @@ config QFP_FUSE
 	  to the fuse block. Currently this is supported only
 	  on FSM targets.
 
+config CABLE_DETECT_8X60
+        boolean "Cable detect driver"
+        depends on ARCH_MSM8X60
+        default n
+        help
+          Detect usb, ac and other accessories.
+
+config CABLE_DETECT_8930
+	boolean "Cable detect driver"
+	depends on ARCH_MSM8930
+	default n
+	help
+	  Detect usb, ac and other accessories.
+
+
+config CABLE_DETECT_ACCESSORY
+	boolean "CABLE ACCESSORY DETECT"
+	default n
+
+config CABLE_DETECT_ACCESSORY_BY_ADC
+	boolean "DETECT ACCESSORY BY PMIC ADC"
+	default n
+
 config USB_HSIC_SMSC_HUB
 	tristate "Support for HSIC based MSM on-chip SMSC3503 HUB"
 	depends on USB_EHCI_MSM_HSIC
@@ -652,19 +695,39 @@ config USB_HSIC_SMSC_HUB
 	  This adds support for connecting devices like mouse in HSIC
 	  Host mode.
 
-config BU52031NVX
-	tristate "Cradle BU52031NVX support"
-	depends on MFD_PM8XXX
-	help
-	  This option enables device driver support for the cradle
-	  on the PM8XXX chips. The cradle is controlled using the
-	  PM8XXX gpio.
+config CABLE_DETECT_8XXX
+        boolean "Cable detect driver"
+        default n
+        help
+          Detect usb, ac and other accessories.
 
-config BU52031NVX_POUCHDETECT
-	tristate "Cradle BU52031NVX_POUCHDETECT support"
-	depends on BU52031NVX
-	help
-	  depends on BU52031NVX
+config KDDI_ADAPTER
+        boolean "KDDI ADAPTER"
+        default n
+
+
+config CABLE_DETECT_ACCESSORY
+        boolean "CABLE ACCESSORY DETECT"
+        default n
+
+config CABLE_DETECT_ACCESSORY_BY_ADC
+        boolean "DETECT ACCESSORY BY PMIC ADC"
+        default n
+
+
+config CABLE_DETECT_FIVE_POGOPIN_AUDIO_DOCK
+        boolean "CABLE_DETECT_FIVE_POGOPIN_AUDIO_DOCK"
+        depends on CABLE_DETECT_8960
+        default n
+
+config RESET_BY_CABLE_IN
+        boolean "DEVICE RESET BY CABLE IN"
+        default n
+
+config USB_OTG_HOST_CHG
+		boolean "Host mode supports charging"
+		depends on USB_OTG_HOST
+		default n
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
@@ -673,7 +736,7 @@ source "drivers/misc/iwmc3200top/Kconfig"
 source "drivers/misc/ti-st/Kconfig"
 source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
+source "drivers/misc/mpu3050/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
-source "drivers/misc/slimport_anx7808/Kconfig"
-
+source "drivers/misc/fpr/Kconfig"
 endmenu

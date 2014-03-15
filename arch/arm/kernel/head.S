@@ -27,6 +27,8 @@
 #include <mach/debug-macro.S>
 #endif
 
+#include <asm/asm_code_footprint.h>
+
 /*
  * swapper_pg_dir is the virtual address of the initial page table.
  * We place the page tables 16K below KERNEL_RAM_VADDR.  Therefore, we must
@@ -90,7 +92,7 @@ ENTRY(stext)
  THUMB(	bx	r9		)	@ If this is a Thumb-2 kernel,
  THUMB(	.thumb			)	@ switch to Thumb now.
  THUMB(1:			)
-
+	ASM_CODE_FOOTPRINT
 	setmode	PSR_F_BIT | PSR_I_BIT | SVC_MODE, r9 @ ensure svc mode
 						@ and irqs disabled
 	mrc	p15, 0, r9, c0, c0		@ get processor id
@@ -120,14 +122,19 @@ ENTRY(stext)
 	 * r1 = machine no, r2 = atags or dtb,
 	 * r8 = phys_offset, r9 = cpuid, r10 = procinfo
 	 */
+	ASM_CODE_FOOTPRINT
 	bl	__vet_atags
 #ifdef CONFIG_SMP_ON_UP
+	ASM_CODE_FOOTPRINT
 	bl	__fixup_smp
 #endif
 #ifdef CONFIG_ARM_PATCH_PHYS_VIRT
+	ASM_CODE_FOOTPRINT
 	bl	__fixup_pv_table
 #endif
+	ASM_CODE_FOOTPRINT
 	bl	__create_page_tables
+	ASM_CODE_FOOTPRINT
 
 	/*
 	 * The following calls CPU specific code in a position independent
@@ -143,6 +150,7 @@ ENTRY(stext)
  ARM(	add	pc, r10, #PROCINFO_INITFUNC	)
  THUMB(	add	r12, r10, #PROCINFO_INITFUNC	)
  THUMB(	mov	pc, r12				)
+	ASM_CODE_FOOTPRINT
 1:	b	__enable_mmu
 ENDPROC(stext)
 	.ltorg
@@ -277,6 +285,10 @@ __create_page_tables:
 	mov	r3, r3, lsl #PMD_ORDER
 
 	add	r0, r4, r3
+	rsb	r3, r3, #0x4000			@ PTRS_PER_PGD*sizeof(long)
+	cmp	r3, #0x0800			@ limit to 512MB
+	movhi	r3, #0x0800
+	add	r6, r0, r3
 	mov	r3, r7, lsr #SECTION_SHIFT
 	ldr	r7, [r10, #PROCINFO_IO_MMUFLAGS] @ io_mmuflags
 	orr	r3, r7, r3, lsl #SECTION_SHIFT
@@ -285,10 +297,13 @@ __create_page_tables:
 #else
 	orr	r3, r3, #PMD_SECT_XN
 #endif
-	str	r3, [r0], #4
+1:	str	r3, [r0], #4
 #ifdef CONFIG_ARM_LPAE
 	str	r7, [r0], #4
 #endif
+	add	r3, r3, #1 << SECTION_SHIFT
+	cmp	r0, r6
+	blo	1b
 
 #else /* CONFIG_DEBUG_ICEDCC || CONFIG_DEBUG_SEMIHOSTING */
 	/* we don't need any serial debugging mappings */
@@ -330,7 +345,6 @@ __turn_mmu_on_loc:
 	.long	__turn_mmu_on_end
 
 #if defined(CONFIG_SMP)
-	__CPUINIT
 ENTRY(secondary_startup)
 	/*
 	 * Common entry point for secondary CPUs.
@@ -415,10 +429,17 @@ __enable_mmu:
 	mov	r5, #0
 	mcrr	p15, 0, r4, r5, c2		@ load TTBR0
 #else
-	mov	r5, #(domain_val(DOMAIN_USER, DOMAIN_MANAGER) | \
-		      domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) | \
-		      domain_val(DOMAIN_TABLE, DOMAIN_MANAGER) | \
+#ifdef CONFIG_EMULATE_DOMAIN_MANAGER_V7
+	mov	r5, #(domain_val(DOMAIN_USER, DOMAIN_CLIENT) | \
+		      domain_val(DOMAIN_KERNEL, DOMAIN_CLIENT) | \
+		      domain_val(DOMAIN_TABLE, DOMAIN_CLIENT) | \
 		      domain_val(DOMAIN_IO, DOMAIN_CLIENT))
+#else
+	mov	r5, #(domain_val(DOMAIN_USER, DOMAIN_CLIENT) | \
+		      domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) | \
+		      domain_val(DOMAIN_TABLE, DOMAIN_CLIENT) | \
+		      domain_val(DOMAIN_IO, DOMAIN_CLIENT))
+#endif
 	mcr	p15, 0, r5, c3, c0, 0		@ load domain access register
 	mcr	p15, 0, r4, c2, c0, 0		@ load page table pointer
 #endif

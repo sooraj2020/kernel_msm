@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,13 +13,7 @@
 #ifndef __ASM_ARCH_MSM_IRQS_8064_H
 #define __ASM_ARCH_MSM_IRQS_8064_H
 
-/* MSM ACPU Interrupt Numbers */
 
-/*
- * 0-15:  STI/SGI (software triggered/generated interrupts)
- * 16-31: PPI (private peripheral interrupts)
- * 32+:   SPI (shared peripheral interrupts)
- */
 
 #define GIC_PPI_START 16
 #define GIC_SPI_START 32
@@ -39,7 +33,6 @@
 #define SC_AVSCPUXUP				(GIC_PPI_START + 12)
 #define SC_SICCPUXACGIRPTREQ			(GIC_PPI_START + 13)
 #define SC_SICCPUXEXTFAULTIRPTREQ		(GIC_PPI_START + 14)
-/* PPI 15 is unused */
 
 #define APCC_QGICACGIRPTREQ			(GIC_SPI_START + 0)
 #define APCC_QGICL2PERFMONIRPTREQ		(GIC_SPI_START + 1)
@@ -287,27 +280,28 @@
 #define	PCIE20_INTC				(GIC_SPI_START + 241)
 #define	PCIE20_INTD				(GIC_SPI_START + 242)
 #define	PCIE20_INT_PLS_HP			(GIC_SPI_START + 243)
-#define	PCIE20_INT_PLS_ERR			(GIC_SPI_START + 244)
-#define	PCIE20_INT_PLS_PME			(GIC_SPI_START + 245)
-#define	PCIE20_INT_LINK_UP			(GIC_SPI_START + 246)
-#define	PCIE20_INT_LINK_DOWN			(GIC_SPI_START + 247)
-#define	PCIE20_INT_HP_LEGACY			(GIC_SPI_START + 248)
-#define	PCIE20_INT_AER_LEGACY			(GIC_SPI_START + 249)
-#define	PCIE20_INT_PME_LEGACY			(GIC_SPI_START + 250)
-#define	PCIE20_INT_BRIDGE_FLUSH_N		(GIC_SPI_START + 251)
+#define	PCIE20_INT_PLS_PME			(GIC_SPI_START + 244)
+#define	PCIE20_INT_LINK_UP			(GIC_SPI_START + 245)
+#define	PCIE20_INT_LINK_DOWN			(GIC_SPI_START + 246)
+#define	PCIE20_INT_HP_LEGACY			(GIC_SPI_START + 247)
+#define	PCIE20_AER_LEGACY			(GIC_SPI_START + 248)
+#define	PCIE20_INT_PME_LEGACY			(GIC_SPI_START + 249)
+#define	PCIE20_INT_BRIDGE_FLUSH_N		(GIC_SPI_START + 250)
 
-/* Backwards compatible IRQ macros. */
 #define INT_ADM_AARM				ADM_0_SCSS_0_IRQ
 
-/* smd/smsm interrupts */
-#define INT_A9_M2A_0		(GIC_SPI_START + 37) /*GSS_TO_APPS_IRQ_0*/
-#define INT_A9_M2A_5		(GIC_SPI_START + 38) /*GSS_TO_APPS_IRQ_1*/
+#define INT_A9_M2A_0		(GIC_SPI_START + 37) 
+#define INT_A9_M2A_5		(GIC_SPI_START + 38) 
 #define INT_ADSP_A11		LPASS_SCSS_GP_HIGH_IRQ
 #define INT_ADSP_A11_SMSM	LPASS_SCSS_GP_MEDIUM_IRQ
 #define INT_DSPS_A11		SPS_MTI_31
 #define INT_DSPS_A11_SMSM	SPS_MTI_30
 #define INT_WCNSS_A11		RIVA_APSS_SPARE_IRQ
 #define INT_WCNSS_A11_SMSM	RIVA_APPS_WLAN_SMSM_IRQ
+
+#if defined (CONFIG_MACH_M7_UL) || defined (CONFIG_MACH_M7_WLS) || defined(CONFIG_MACH_M7_WLV) || defined(CONFIG_MACH_M7_DCG) || defined(CONFIG_MACH_M7_DUG) || defined(CONFIG_MACH_DUMMY)
+#define INT_KEY_HP			(GIC_SPI_START + 313)
+#endif
 
 #endif
 

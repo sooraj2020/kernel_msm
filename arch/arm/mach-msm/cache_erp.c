@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,10 +32,8 @@
 #define CESR_TLBMH		BIT(16)
 #define CESR_I_MASK		0x000000CC
 
-/* Print a message for everything but TLB MH events */
 #define CESR_PRINT_MASK		0x000000FF
 
-/* Log everything but TLB MH events */
 #define CESR_LOG_EVENT_MASK	0x000000FF
 
 #define L2ESR_IND_ADDR		0x204
@@ -73,7 +71,7 @@
 #ifdef CONFIG_MSM_L2_ERP_1BIT_PANIC
 #define ERP_1BIT_ERR(a) panic(a)
 #else
-#define ERP_1BIT_ERR(a) do { } while (0)
+#define ERP_1BIT_ERR(a) WARN(1, a)
 #endif
 
 #ifdef CONFIG_MSM_L2_ERP_PRINT_ACCESS_ERRORS
@@ -85,7 +83,7 @@
 #ifdef CONFIG_MSM_L2_ERP_2BIT_PANIC
 #define ERP_2BIT_ERR(a) panic(a)
 #else
-#define ERP_2BIT_ERR(a) do { } while (0)
+#define ERP_2BIT_ERR(a) WARN(1, a)
 #endif
 
 #define MODULE_NAME "msm_cache_erp"
@@ -253,11 +251,22 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 	int print_regs = cesr & CESR_PRINT_MASK;
 	int log_event = cesr & CESR_LOG_EVENT_MASK;
 
+	void *const saw_bases[] = {
+		MSM_SAW0_BASE,
+		MSM_SAW1_BASE,
+		MSM_SAW2_BASE,
+		MSM_SAW3_BASE,
+	};
+
 	if (print_regs) {
 		pr_alert("L1 / TLB Error detected on CPU %d!\n", cpu);
 		pr_alert("\tCESR      = 0x%08x\n", cesr);
 		pr_alert("\tCPU speed = %lu\n", acpuclk_get_rate(cpu));
 		pr_alert("\tMIDR      = 0x%08x\n", read_cpuid_id());
+		pr_alert("\tPTE fuses = 0x%08x\n",
+					readl_relaxed(MSM_QFPROM_BASE + 0xC0));
+		pr_alert("\tPMIC_VREG = 0x%08x\n",
+					readl_relaxed(saw_bases[cpu] + 0x14));
 	}
 
 	if (cesr & CESR_DCTPE) {
@@ -300,11 +309,6 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 		pr_alert("I-side CESYNR = 0x%08x\n", i_cesynr);
 		write_cesr(CESR_I_MASK);
 
-		/*
-		 * Clear the I-side bits from the captured CESR value so that we
-		 * don't accidentally clear any new I-side errors when we do
-		 * the CESR write-clear operation.
-		 */
 		cesr &= ~CESR_I_MASK;
 	}
 
@@ -316,7 +320,7 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 	if (log_event)
 		log_cpu_event();
 
-	/* Clear the interrupt bits we processed */
+	
 	write_cesr(cesr);
 
 	if (print_regs)
@@ -324,6 +328,16 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 
 	return IRQ_HANDLED;
 }
+
+
+#ifdef CONFIG_IGNORE_L2_FALSE_ALRAM
+	#define DUMP_L2_ERP_MIN_INTERVAL  (HZ / 2) 
+
+	static unsigned long last_trigger_jiffies = 0; 
+	int l2_erp_print=0;
+#else
+	int l2_erp_print=1;
+#endif
 
 static irqreturn_t msm_l2_erp_irq(int irq, void *dev_id)
 {
@@ -343,7 +357,16 @@ static irqreturn_t msm_l2_erp_irq(int irq, void *dev_id)
 	l2ear0 = get_l2_indirect_reg(L2EAR0_IND_ADDR);
 	l2ear1 = get_l2_indirect_reg(L2EAR1_IND_ADDR);
 
-	print_alert = print_access_errors() || (l2esr & L2ESR_ACCESS_ERR_MASK);
+#ifdef CONFIG_IGNORE_L2_FALSE_ALRAM
+	if((last_trigger_jiffies == 0) || time_is_after_jiffies(last_trigger_jiffies + DUMP_L2_ERP_MIN_INTERVAL) )
+		l2_erp_print = 0;
+	else
+		l2_erp_print = 1;
+
+	last_trigger_jiffies = jiffies;
+#endif
+
+	print_alert = (l2_erp_print && print_access_errors()) || (l2esr & L2ESR_ACCESS_ERR_MASK);
 
 	if (print_alert) {
 		pr_alert("L2 Error detected!\n");
@@ -539,18 +562,12 @@ static int msm_cache_erp_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id cache_erp_match_table[] = {
-	{	.compatible = "qcom,cache_erp",	},
-	{}
-};
-
 static struct platform_driver msm_cache_erp_driver = {
 	.probe = msm_cache_erp_probe,
 	.remove = msm_cache_erp_remove,
 	.driver = {
 		.name = MODULE_NAME,
 		.owner = THIS_MODULE,
-		.of_match_table = cache_erp_match_table,
 	},
 };
 

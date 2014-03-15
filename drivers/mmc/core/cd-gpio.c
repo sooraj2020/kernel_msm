@@ -24,7 +24,7 @@ struct mmc_cd_gpio {
 
 static irqreturn_t mmc_cd_gpio_irqt(int irq, void *dev_id)
 {
-	/* Schedule a card detection after a debounce timeout */
+	
 	mmc_detect_change(dev_id, msecs_to_jiffies(100));
 	return IRQ_HANDLED;
 }
@@ -72,6 +72,9 @@ EXPORT_SYMBOL(mmc_cd_gpio_request);
 void mmc_cd_gpio_free(struct mmc_host *host)
 {
 	struct mmc_cd_gpio *cd = host->hotplug.handler_priv;
+
+	if (!cd)
+		return;
 
 	free_irq(host->hotplug.irq, host);
 	gpio_free(cd->gpio);

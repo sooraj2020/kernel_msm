@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,12 +13,8 @@
 #ifndef __HSIC_SYSMON_H__
 #define __HSIC_SYSMON_H__
 
-/**
- * enum hsic_sysmon_device_id - Supported HSIC subsystem devices
- */
 enum hsic_sysmon_device_id {
 	HSIC_SYSMON_DEV_EXT_MODEM,
-	HSIC_SYSMON_DEV_EXT_MODEM_2,
 	NUM_HSIC_SYSMON_DEVS
 };
 
@@ -31,7 +27,7 @@ extern int hsic_sysmon_read(enum hsic_sysmon_device_id id, char *data,
 extern int hsic_sysmon_write(enum hsic_sysmon_device_id id, const char *data,
 			     size_t len, int timeout);
 
-#else /* CONFIG_MSM_HSIC_SYSMON || CONFIG_MSM_HSIC_SYSMON_MODULE */
+#else 
 
 static inline int hsic_sysmon_open(enum hsic_sysmon_device_id id)
 {
@@ -52,6 +48,6 @@ static inline int hsic_sysmon_write(enum hsic_sysmon_device_id id,
 	return -ENODEV;
 }
 
-#endif /* CONFIG_MSM_HSIC_SYSMON || CONFIG_MSM_HSIC_SYSMON_MODULE */
+#endif 
 
-#endif /* __HSIC_SYSMON_H__ */
+#endif 

@@ -34,7 +34,6 @@ DEFINE_EVENT(cpu, cpu_idle,
 	TP_ARGS(state, cpu_id)
 );
 
-/* This file can get included multiple times, TRACE_HEADER_MULTI_READ at top */
 #ifndef _PWR_EVENT_AVOID_DOUBLE_DEFINING
 #define _PWR_EVENT_AVOID_DOUBLE_DEFINING
 
@@ -46,48 +45,6 @@ DEFINE_EVENT(cpu, cpu_frequency,
 	TP_PROTO(unsigned int frequency, unsigned int cpu_id),
 
 	TP_ARGS(frequency, cpu_id)
-);
-
-TRACE_EVENT(cpu_frequency_switch_start,
-
-	TP_PROTO(unsigned int start_freq, unsigned int end_freq,
-		 unsigned int cpu_id),
-
-	TP_ARGS(start_freq, end_freq, cpu_id),
-
-	TP_STRUCT__entry(
-		__field(	u32,		start_freq	)
-		__field(	u32,		end_freq	)
-		__field(	u32,		cpu_id		)
-	),
-
-	TP_fast_assign(
-		__entry->start_freq = start_freq;
-		__entry->end_freq = end_freq;
-		__entry->cpu_id = cpu_id;
-	),
-
-	TP_printk("start=%lu end=%lu cpu_id=%lu",
-		  (unsigned long)__entry->start_freq,
-		  (unsigned long)__entry->end_freq,
-		  (unsigned long)__entry->cpu_id)
-);
-
-TRACE_EVENT(cpu_frequency_switch_end,
-
-	TP_PROTO(unsigned int cpu_id),
-
-	TP_ARGS(cpu_id),
-
-	TP_STRUCT__entry(
-		__field(	u32,		cpu_id		)
-	),
-
-	TP_fast_assign(
-		__entry->cpu_id = cpu_id;
-	),
-
-	TP_printk("cpu_id=%lu", (unsigned long)__entry->cpu_id)
 );
 
 TRACE_EVENT(machine_suspend,
@@ -109,10 +66,6 @@ TRACE_EVENT(machine_suspend,
 
 #ifdef CONFIG_EVENT_POWER_TRACING_DEPRECATED
 
-/*
- * The power events are used for cpuidle & suspend (power_start, power_end)
- *  and for cpufreq (power_frequency)
- */
 DECLARE_EVENT_CLASS(power,
 
 	TP_PROTO(unsigned int type, unsigned int state, unsigned int cpu_id),
@@ -167,7 +120,6 @@ TRACE_EVENT(power_end,
 
 );
 
-/* Deprecated dummy functions must be protected against multi-declartion */
 #ifndef _PWR_EVENT_AVOID_DOUBLE_DEFINING_DEPRECATED
 #define _PWR_EVENT_AVOID_DOUBLE_DEFINING_DEPRECATED
 
@@ -176,9 +128,9 @@ enum {
 	POWER_CSTATE = 1,
 	POWER_PSTATE = 2,
 };
-#endif /* _PWR_EVENT_AVOID_DOUBLE_DEFINING_DEPRECATED */
+#endif 
 
-#else /* CONFIG_EVENT_POWER_TRACING_DEPRECATED */
+#else 
 
 #ifndef _PWR_EVENT_AVOID_DOUBLE_DEFINING_DEPRECATED
 #define _PWR_EVENT_AVOID_DOUBLE_DEFINING_DEPRECATED
@@ -188,21 +140,15 @@ enum {
        POWER_PSTATE = 2,
 };
 
-/* These dummy declaration have to be ripped out when the deprecated
-   events get removed */
 static inline void trace_power_start(u64 type, u64 state, u64 cpuid) {};
 static inline void trace_power_end(u64 cpuid) {};
 static inline void trace_power_start_rcuidle(u64 type, u64 state, u64 cpuid) {};
 static inline void trace_power_end_rcuidle(u64 cpuid) {};
 static inline void trace_power_frequency(u64 type, u64 state, u64 cpuid) {};
-#endif /* _PWR_EVENT_AVOID_DOUBLE_DEFINING_DEPRECATED */
+#endif 
 
-#endif /* CONFIG_EVENT_POWER_TRACING_DEPRECATED */
+#endif 
 
-/*
- * The clock events are used for clock enable/disable and for
- *  clock rate change
- */
 DECLARE_EVENT_CLASS(clock,
 
 	TP_PROTO(const char *name, unsigned int state, unsigned int cpu_id),
@@ -265,9 +211,6 @@ TRACE_EVENT(clock_set_parent,
 	TP_printk("%s parent=%s", __get_str(name), __get_str(parent_name))
 );
 
-/*
- * The power domain events are used for power domains transitions
- */
 DECLARE_EVENT_CLASS(power_domain,
 
 	TP_PROTO(const char *name, unsigned int state, unsigned int cpu_id),
@@ -296,7 +239,6 @@ DEFINE_EVENT(power_domain, power_domain_target,
 
 	TP_ARGS(name, state, cpu_id)
 );
-#endif /* _TRACE_POWER_H */
+#endif 
 
-/* This part must be outside protection */
 #include <trace/define_trace.h>

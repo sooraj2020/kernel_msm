@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,10 +15,10 @@
 #include <linux/iommu.h>
 #include <linux/memory_alloc.h>
 #include <linux/platform_device.h>
+#include <linux/vmalloc.h>
 #include <linux/rbtree.h>
 #include <linux/slab.h>
-#include <linux/idr.h>
-#include <linux/err.h>
+#include <linux/vmalloc.h>
 #include <asm/sizes.h>
 #include <asm/page.h>
 #include <mach/iommu.h>
@@ -26,7 +26,6 @@
 #include <mach/socinfo.h>
 #include <mach/msm_subsystem_map.h>
 
-/* dummy 64K for overmapping */
 char iommu_dummy[2*SZ_64K-4];
 
 struct msm_iova_data {
@@ -37,14 +36,9 @@ struct msm_iova_data {
 	int domain_num;
 };
 
-struct msm_iommu_data_entry {
-	struct list_head list;
-	void *data;
-};
-
 static struct rb_root domain_root;
 DEFINE_MUTEX(domain_mutex);
-static DEFINE_IDA(domain_nums);
+static atomic_t domain_nums = ATOMIC_INIT(-1);
 
 int msm_use_iommu()
 {
@@ -66,7 +60,7 @@ int msm_iommu_map_extra(struct iommu_domain *domain,
 		unsigned int nrpages = PFN_ALIGN(size) >> PAGE_SHIFT;
 		struct page *dummy_page = phys_to_page(phy_addr);
 
-		sglist = kmalloc(sizeof(*sglist) * nrpages, GFP_KERNEL);
+		sglist = vmalloc(sizeof(*sglist) * nrpages);
 		if (!sglist) {
 			ret = -ENOMEM;
 			goto out;
@@ -83,7 +77,7 @@ int msm_iommu_map_extra(struct iommu_domain *domain,
 				__func__, start_iova, domain);
 		}
 
-		kfree(sglist);
+		vfree(sglist);
 	} else {
 		unsigned long order = get_order(page_size);
 		unsigned long aligned_size = ALIGN(size, page_size);
@@ -138,7 +132,7 @@ static int msm_iommu_map_iova_phys(struct iommu_domain *domain,
 	int prot = IOMMU_WRITE | IOMMU_READ;
 	prot |= cached ? IOMMU_CACHE : 0;
 
-	sglist = kmalloc(sizeof(*sglist), GFP_KERNEL);
+	sglist = vmalloc(sizeof(*sglist));
 	if (!sglist) {
 		ret = -ENOMEM;
 		goto err1;
@@ -155,7 +149,7 @@ static int msm_iommu_map_iova_phys(struct iommu_domain *domain,
 			__func__, iova, domain);
 	}
 
-	kfree(sglist);
+	vfree(sglist);
 err1:
 	return ret;
 
@@ -196,7 +190,6 @@ int msm_iommu_map_contig_buffer(unsigned long phys,
 
 	return ret;
 }
-EXPORT_SYMBOL(msm_iommu_map_contig_buffer);
 
 void msm_iommu_unmap_contig_buffer(unsigned long iova,
 					unsigned int domain_no,
@@ -209,7 +202,6 @@ void msm_iommu_unmap_contig_buffer(unsigned long iova,
 	iommu_unmap_range(msm_get_iommu_domain(domain_no), iova, size);
 	msm_free_iova_address(iova, domain_no, partition_no, size);
 }
-EXPORT_SYMBOL(msm_iommu_unmap_contig_buffer);
 
 static struct msm_iova_data *find_domain(int domain_num)
 {
@@ -261,27 +253,6 @@ static int add_domain(struct msm_iova_data *node)
 	return 0;
 }
 
-static int remove_domain(struct iommu_domain *domain)
-{
-	struct rb_root *root = &domain_root;
-	struct rb_node *n;
-	struct msm_iova_data *node;
-	int ret = -EINVAL;
-
-	mutex_lock(&domain_mutex);
-
-	for (n = rb_first(root); n; n = rb_next(n)) {
-		node = rb_entry(n, struct msm_iova_data, node);
-		if (node->domain == domain) {
-			rb_erase(&node->node, &domain_root);
-			ret = 0;
-			break;
-		}
-	}
-	mutex_unlock(&domain_mutex);
-	return ret;
-}
-
 struct iommu_domain *msm_get_iommu_domain(int domain_num)
 {
 	struct msm_iova_data *data;
@@ -292,27 +263,6 @@ struct iommu_domain *msm_get_iommu_domain(int domain_num)
 		return data->domain;
 	else
 		return NULL;
-}
-
-static struct msm_iova_data *msm_domain_to_iova_data(struct iommu_domain
-						     const *domain)
-{
-	struct rb_root *root = &domain_root;
-	struct rb_node *n;
-	struct msm_iova_data *node;
-	struct msm_iova_data *iova_data = ERR_PTR(-EINVAL);
-
-	mutex_lock(&domain_mutex);
-
-	for (n = rb_first(root); n; n = rb_next(n)) {
-		node = rb_entry(n, struct msm_iova_data, node);
-		if (node->domain == domain) {
-			iova_data = node;
-			break;
-		}
-	}
-	mutex_unlock(&domain_mutex);
-	return iova_data;
 }
 
 int msm_allocate_iova_address(unsigned int iommu_domain,
@@ -341,7 +291,7 @@ int msm_allocate_iova_address(unsigned int iommu_domain,
 	va = gen_pool_alloc_aligned(pool->gpool, size, ilog2(align));
 	if (va) {
 		pool->free -= size;
-		/* Offset because genpool can't handle 0 addresses */
+		
 		if (pool->paddr == 0)
 			va -= SZ_4K;
 		*iova = va;
@@ -379,7 +329,7 @@ void msm_free_iova_address(unsigned long iova,
 
 	pool->free += size;
 
-	/* Offset because genpool can't handle 0 addresses */
+	
 	if (pool->paddr == 0)
 		iova += SZ_4K;
 
@@ -400,11 +350,11 @@ int msm_register_domain(struct msm_iova_layout *layout)
 	if (!data)
 		return -ENOMEM;
 
-	pools = kzalloc(sizeof(struct mem_pool) * layout->npartitions,
+	pools = kmalloc(sizeof(struct mem_pool) * layout->npartitions,
 			GFP_KERNEL);
 
 	if (!pools)
-		goto free_data;
+		goto out;
 
 	for (i = 0; i < layout->npartitions; i++) {
 		if (layout->partitions[i].size == 0)
@@ -418,12 +368,6 @@ int msm_register_domain(struct msm_iova_layout *layout)
 		pools[i].paddr = layout->partitions[i].start;
 		pools[i].size = layout->partitions[i].size;
 
-		/*
-		 * genalloc can't handle a pool starting at address 0.
-		 * For now, solve this problem by offsetting the value
-		 * put in by 4k.
-		 * gen pool address = actual address + 4k
-		 */
 		if (pools[i].paddr == 0)
 			layout->partitions[i].start += SZ_4K;
 
@@ -438,64 +382,21 @@ int msm_register_domain(struct msm_iova_layout *layout)
 
 	data->pools = pools;
 	data->npools = layout->npartitions;
-	data->domain_num = ida_simple_get(&domain_nums, 0, 0, GFP_KERNEL);
-	if (data->domain_num < 0)
-		goto free_pools;
-
+	data->domain_num = atomic_inc_return(&domain_nums);
 	data->domain = iommu_domain_alloc(&platform_bus_type,
 					  layout->domain_flags);
-	if (!data->domain)
-		goto free_domain_num;
 
 	add_domain(data);
 
 	return data->domain_num;
 
-free_domain_num:
-	ida_simple_remove(&domain_nums, data->domain_num);
-
-free_pools:
-	for (i = 0; i < layout->npartitions; i++) {
-		if (pools[i].gpool)
-			gen_pool_destroy(pools[i].gpool);
-	}
-	kfree(pools);
-free_data:
+out:
 	kfree(data);
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL(msm_register_domain);
 
-int msm_unregister_domain(struct iommu_domain *domain)
-{
-	unsigned int i;
-	struct msm_iova_data *data = msm_domain_to_iova_data(domain);
-
-	if (IS_ERR_OR_NULL(data)) {
-		pr_err("%s: Could not find iova_data\n", __func__);
-		return -EINVAL;
-	}
-
-	if (remove_domain(data->domain)) {
-		pr_err("%s: Domain not found. Failed to remove domain\n",
-			__func__);
-	}
-
-	iommu_domain_free(domain);
-
-	ida_simple_remove(&domain_nums, data->domain_num);
-
-	for (i = 0; i < data->npools; ++i)
-		gen_pool_destroy(data->pools[i].gpool);
-
-	kfree(data->pools);
-	kfree(data);
-	return 0;
-}
-EXPORT_SYMBOL(msm_unregister_domain);
-
-static int iommu_domain_probe(struct platform_device *pdev)
+static int __init iommu_domain_probe(struct platform_device *pdev)
 {
 	struct iommu_domains_pdata *p  = pdev->dev.platform_data;
 	int i, j;

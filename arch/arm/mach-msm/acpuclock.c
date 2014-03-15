@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -13,12 +13,15 @@
 #include <linux/cpu.h>
 #include <linux/smp.h>
 #include "acpuclock.h"
-#include <trace/events/power.h>
 
 static struct acpuclk_data *acpuclk_data;
+int init_done = 0;
 
 unsigned long acpuclk_get_rate(int cpu)
 {
+	if (!init_done)
+		return 0;
+
 	if (!acpuclk_data->get_rate)
 		return 0;
 
@@ -27,19 +30,10 @@ unsigned long acpuclk_get_rate(int cpu)
 
 int acpuclk_set_rate(int cpu, unsigned long rate, enum setrate_reason reason)
 {
-	int ret;
-
 	if (!acpuclk_data->set_rate)
 		return 0;
 
-	trace_cpu_frequency_switch_start(acpuclk_get_rate(cpu), rate, cpu);
-	ret = acpuclk_data->set_rate(cpu, rate, reason);
-	if (!ret) {
-		trace_cpu_frequency_switch_end(cpu);
-		trace_cpu_frequency(rate, cpu);
-	}
-
-	return ret;
+	return acpuclk_data->set_rate(cpu, rate, reason);
 }
 
 uint32_t acpuclk_get_switch_time(void)
@@ -65,5 +59,6 @@ unsigned long acpuclk_wait_for_irq(void)
 
 void __devinit acpuclk_register(struct acpuclk_data *data)
 {
+	init_done = 1;
 	acpuclk_data = data;
 }

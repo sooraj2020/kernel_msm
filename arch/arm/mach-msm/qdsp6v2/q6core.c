@@ -28,6 +28,11 @@
 #include <mach/qdsp6v2/apr.h>
 #include "q6core.h"
 
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+
 #define TIMEOUT_MS 1000
 
 static struct apr_svc *apr_handle_q;
@@ -335,7 +340,7 @@ static ssize_t apr_debug_write(struct file *file, const char __user *buf,
 		if (apr_handle_q)
 			apr_deregister(apr_handle_q);
 	} else if (!strncmp(l_buf + 20, "loaded", 64)) {
-		apr_set_q6_state(APR_SUBSYS_LOADED);
+		change_q6_state(APR_Q6_LOADED);
 	} else if (!strncmp(l_buf + 20, "boom", 64)) {
 		q6audio_dsp_not_responding();
 	} else if (!strncmp(l_buf + 20, "dsp_ver", 64)) {
@@ -399,7 +404,7 @@ static int __init core_init(void)
 #ifdef CONFIG_DEBUG_FS
 	dentry = debugfs_create_file("apr", S_IFREG | S_IRUGO | S_IWUSR
 		| S_IWGRP, NULL, (void *) NULL, &apr_debug_fops);
-#endif /* CONFIG_DEBUG_FS */
+#endif 
 
 	return 0;
 }

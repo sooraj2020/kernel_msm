@@ -205,17 +205,20 @@ obj-$(CONFIG_VIDEO_SH_VOU)		+= sh_vou.o
 
 obj-$(CONFIG_VIDEO_AU0828) += au0828/
 
-obj-$(CONFIG_USB_VIDEO_CLASS)	+= uvc/
+#obj-$(CONFIG_USB_VIDEO_CLASS)	+= uvc/
 obj-$(CONFIG_VIDEO_SAA7164)     += saa7164/
 
 obj-$(CONFIG_VIDEO_IR_I2C)  += ir-kbd-i2c.o
 
 obj-y	+= davinci/
 
+ifeq ($(CONFIG_MSM_CAMERA),y)
 obj-$(CONFIG_MSM_CAMERA) += msm/
+endif
+obj-$(CONFIG_FB_MSM_WRITEBACK_MSM_PANEL) += msm/wfd/
 obj-$(CONFIG_ARCH_OMAP)	+= omap/
-obj-$(CONFIG_MSM_VIDC_V4L2) += msm_vidc/
-obj-$(CONFIG_MSM_WFD) += msm_wfd/
+#obj-$(CONFIG_MSM_VIDC) += msm_vidc/
+obj-$(CONFIG_VIDEO_NMI) += nmi/
 
 ccflags-y += -I$(srctree)/drivers/media/dvb/dvb-core
 ccflags-y += -I$(srctree)/drivers/media/dvb/frontends

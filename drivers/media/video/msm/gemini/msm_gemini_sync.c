@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,10 +21,8 @@
 #include "msm_gemini_platform.h"
 #include "msm_gemini_common.h"
 
-#  define UINT32_MAX    (4294967295U)
 static int release_buf;
 
-/*************** queue helper ****************/
 inline void msm_gemini_q_init(char const *name, struct msm_gemini_q *q_p)
 {
 	GMN_DBG("%s:%d] %s\n", __func__, __LINE__, name);
@@ -103,7 +101,7 @@ inline int msm_gemini_q_in_buf(struct msm_gemini_q *q_p,
 
 inline int msm_gemini_q_wait(struct msm_gemini_q *q_p)
 {
-	int tm = MAX_SCHEDULE_TIMEOUT; /* 500ms */
+	int tm = MAX_SCHEDULE_TIMEOUT; 
 	int rc;
 
 	GMN_DBG("%s:%d] %s wait\n", __func__, __LINE__, q_p->name);
@@ -174,7 +172,6 @@ inline void msm_gemini_q_cleanup(struct msm_gemini_q *q_p)
 	q_p->unblck = 0;
 }
 
-/*************** event queue ****************/
 
 int msm_gemini_framedone_irq(struct msm_gemini_device *pgmn_dev,
 	struct msm_gemini_core_buf *buf_in)
@@ -218,13 +215,9 @@ int msm_gemini_evt_get(struct msm_gemini_device *pgmn_dev,
 		GMN_DBG("%s:%d] no buffer\n", __func__, __LINE__);
 		return -EAGAIN;
 	}
-
-	memset(&ctrl_cmd, 0, sizeof(struct msm_gemini_ctrl_cmd));
+    memset(&ctrl_cmd,0,sizeof(ctrl_cmd));
 	ctrl_cmd.type = buf_p->vbuf.type;
 	kfree(buf_p);
-
-	GMN_DBG("%s:%d] 0x%08x %d\n", __func__, __LINE__,
-		(int) ctrl_cmd.value, ctrl_cmd.len);
 
 	if (copy_to_user(to, &ctrl_cmd, sizeof(ctrl_cmd))) {
 		GMN_PR_ERR("%s:%d]\n", __func__, __LINE__);
@@ -265,7 +258,6 @@ void msm_gemini_err_irq(struct msm_gemini_device *pgmn_dev,
 	return;
 }
 
-/*************** output queue ****************/
 
 int msm_gemini_we_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 	struct msm_gemini_core_buf *buf_in)
@@ -282,7 +274,6 @@ int msm_gemini_we_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 		GMN_DBG("%s:%d] no output return buffer\n", __func__,
 			__LINE__);
 		rc = -1;
-		return rc;
 	}
 
 	buf_out = msm_gemini_q_out(&pgmn_dev->output_buf_q);
@@ -291,7 +282,8 @@ int msm_gemini_we_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 		rc = msm_gemini_core_we_buf_update(buf_out);
 		kfree(buf_out);
 	} else {
-		msm_gemini_core_we_buf_reset(buf_in);
+		if (buf_in)
+			msm_gemini_core_we_buf_reset(buf_in);
 		GMN_DBG("%s:%d] no output buffer\n", __func__, __LINE__);
 		rc = -2;
 	}
@@ -375,7 +367,6 @@ int msm_gemini_output_buf_enqueue(struct msm_gemini_device *pgmn_dev,
 	return 0;
 }
 
-/*************** input queue ****************/
 
 int msm_gemini_fe_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 	struct msm_gemini_core_buf *buf_in)
@@ -487,13 +478,13 @@ int msm_gemini_input_buf_enqueue(struct msm_gemini_device *pgmn_dev,
 	} else {
 	buf_p->y_buffer_addr    = msm_gemini_platform_v2p(buf_cmd.fd,
 		buf_cmd.y_len + buf_cmd.cbcr_len, &buf_p->file,
-		&buf_p->handle)	+ buf_cmd.offset + buf_cmd.y_off;
+		&buf_p->handle)	+ buf_cmd.offset;
 	}
 	buf_p->y_len          = buf_cmd.y_len;
 
-	buf_p->cbcr_buffer_addr = buf_p->y_buffer_addr + buf_cmd.y_len +
-					buf_cmd.cbcr_off;
+	buf_p->cbcr_buffer_addr = buf_p->y_buffer_addr + buf_cmd.y_len;
 	buf_p->cbcr_len       = buf_cmd.cbcr_len;
+
 	buf_p->num_of_mcu_rows = buf_cmd.num_of_mcu_rows;
 	GMN_DBG("%s: y_addr=%x,y_len=%x,cbcr_addr=%x,cbcr_len=%x\n", __func__,
 		buf_p->y_buffer_addr, buf_p->y_len, buf_p->cbcr_buffer_addr,
@@ -549,7 +540,7 @@ int __msm_gemini_open(struct msm_gemini_device *pgmn_dev)
 
 	mutex_lock(&pgmn_dev->lock);
 	if (pgmn_dev->open_count) {
-		/* only open once */
+		
 		GMN_PR_ERR("%s:%d] busy\n", __func__, __LINE__);
 		mutex_unlock(&pgmn_dev->lock);
 		return -EBUSY;
@@ -640,8 +631,8 @@ int msm_gemini_ioctl_hw_cmds(struct msm_gemini_device *pgmn_dev,
 	void * __user arg)
 {
 	int is_copy_to_user;
-	uint32_t len;
-	uint32_t m,n;
+	int len;
+	uint32_t m;
 	struct msm_gemini_hw_cmds *hw_cmds_p;
 	struct msm_gemini_hw_cmd *hw_cmd_p;
 
@@ -650,23 +641,8 @@ int msm_gemini_ioctl_hw_cmds(struct msm_gemini_device *pgmn_dev,
 		return -EFAULT;
 	}
 
-    if ((m == 0) || (m > ((UINT32_MAX-sizeof(struct msm_gemini_hw_cmds))/
-           sizeof(struct msm_gemini_hw_cmd)))) {
-           GMN_PR_ERR("%s:%d] outof range of hwcmds\n",
-            __func__, __LINE__);
-           return -EINVAL;
-    }
-
 	len = sizeof(struct msm_gemini_hw_cmds) +
 		sizeof(struct msm_gemini_hw_cmd) * (m - 1);
-
-	n = ((len - sizeof(struct msm_gemini_hw_cmds)) / (sizeof(struct msm_gemini_hw_cmd))) + 1 ;
-
-	if ((m != n) || (len < 0)) {
-	    GMN_PR_ERR("%s:%d] m != n failed\n", __func__, __LINE__);
-	    return -EFAULT;
-	}
-
 	hw_cmds_p = kmalloc(len, GFP_KERNEL);
 	if (!hw_cmds_p) {
 		GMN_PR_ERR("%s:%d] no mem %d\n", __func__, __LINE__, len);
@@ -721,12 +697,12 @@ int msm_gemini_start(struct msm_gemini_device *pgmn_dev, void * __user arg)
 		if (buf_out_free[i]) {
 			msm_gemini_core_we_buf_update(buf_out_free[i]);
 		} else if (i == 1) {
-			/* set the pong to same address as ping */
+			
 			buf_out_free[0]->y_len >>= 1;
 			buf_out_free[0]->y_buffer_addr +=
 				buf_out_free[0]->y_len;
 			msm_gemini_core_we_buf_update(buf_out_free[0]);
-			/* since ping and pong are same buf release only once*/
+			
 			release_buf = 0;
 		} else {
 			GMN_DBG("%s:%d] no output buffer\n",
@@ -760,6 +736,14 @@ int msm_gemini_ioctl_reset(struct msm_gemini_device *pgmn_dev,
 	rc = msm_gemini_core_reset(pgmn_dev->op_mode, pgmn_dev->base,
 		resource_size(pgmn_dev->mem));
 	return rc;
+}
+
+int msm_gemini_ioctl_test_dump_region(struct msm_gemini_device *pgmn_dev,
+	unsigned long arg)
+{
+	GMN_DBG("%s:%d] Enter\n", __func__, __LINE__);
+	msm_gemini_hw_region_dump(arg);
+	return 0;
 }
 
 long __msm_gemini_ioctl(struct msm_gemini_device *pgmn_dev,
@@ -824,6 +808,10 @@ long __msm_gemini_ioctl(struct msm_gemini_device *pgmn_dev,
 
 	case MSM_GMN_IOCTL_HW_CMDS:
 		rc = msm_gemini_ioctl_hw_cmds(pgmn_dev, (void __user *) arg);
+		break;
+
+	case MSM_GMN_IOCTL_TEST_DUMP_REGION:
+		rc = msm_gemini_ioctl_test_dump_region(pgmn_dev, arg);
 		break;
 
 	default:

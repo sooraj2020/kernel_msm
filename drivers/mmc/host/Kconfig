@@ -500,9 +500,12 @@ config MMC_MSM_SDC3_SUPPORT
 	help
 	  Select Y to enable Slot 3.
 
-config MMC_MSM_SDC3_POLLING
-	boolean "Qualcomm SDC3 support"
+config MMC_MSM_CARD_HW_DETECTION
+	boolean "Qualcomm MMC Hardware detection support"
 	depends on MMC_MSM
+	default n
+	help
+	  Select Y if the hardware has support to detect card insertion/removal.
 
 config MMC_MSM_SDC3_8_BIT_SUPPORT
 	boolean "Qualcomm SDC3 8bit support"
@@ -714,3 +717,19 @@ config MMC_USHC
 
 	  Note: These controllers only support SDIO cards and do not
 	  support MMC or SD memory cards.
+
+config HTC_DISABLE_DUMMY52
+	tristate "HTC_DISABLE_DUMMY52"
+	help
+	  HTC_DISABLE_DUMMY52
+
+config WIFI_IRQ_DEBUG
+    tristate "HTC_WIFI_IRQ_DEBUG"
+	help
+	  HTC_WIFI_IRQ_DEBUG
+
+config WIFI_MMC
+    tristate "HTC_WIFI_MMC"
+	help
+   HTC_WIFI_MMC
+

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,19 +20,21 @@
 #define DEINIT_TYPE			16
 #define USER_SPACE_DATA_TYPE		32
 #define DCI_DATA_TYPE			64
+
+#define USERMODE_DIAGFWD		2048
+#define USERMODE_DIAGFWD_LEGACY		64
+
 #define USB_MODE			1
 #define MEMORY_DEVICE_MODE		2
 #define NO_LOGGING_MODE			3
 #define UART_MODE			4
 #define SOCKET_MODE			5
 #define CALLBACK_MODE			6
-/* different values that go in for diag_data_type */
 #define DATA_TYPE_EVENT         	0
 #define DATA_TYPE_F3            	1
 #define DATA_TYPE_LOG           	2
 #define DATA_TYPE_RESPONSE      	3
 
-/* Different IOCTL values */
 #define DIAG_IOCTL_COMMAND_REG  	0
 #define DIAG_IOCTL_SWITCH_LOGGING	7
 #define DIAG_IOCTL_GET_DELAYED_RSP_ID 	8
@@ -44,8 +46,8 @@
 #define DIAG_IOCTL_DCI_STREAM_INIT	24
 #define DIAG_IOCTL_DCI_HEALTH_STATS	25
 #define DIAG_IOCTL_REMOTE_DEV		32
+#define DIAG_IOCTL_NONBLOCKING_TIMEOUT 64
 
-/* PC Tools IDs */
 #define APQ8060_TOOLS_ID	4062
 #define AO8960_TOOLS_ID		4064
 #define APQ8064_TOOLS_ID	4072
@@ -91,16 +93,12 @@
 #define MSG_MASK_30			(0x40000000)
 #define MSG_MASK_31			(0x80000000)
 
-/*  These masks are to be used for support of all legacy messages in the sw.
-The user does not need to remember the names as they will be embedded in
-the appropriate macros. */
 #define MSG_LEGACY_LOW			MSG_MASK_0
 #define MSG_LEGACY_MED			MSG_MASK_1
 #define MSG_LEGACY_HIGH			MSG_MASK_2
 #define MSG_LEGACY_ERROR		MSG_MASK_3
 #define MSG_LEGACY_FATAL		MSG_MASK_4
 
-/* Legacy Message Priorities */
 #define MSG_LVL_FATAL			(MSG_LEGACY_FATAL)
 #define MSG_LVL_ERROR			(MSG_LEGACY_ERROR | MSG_LVL_FATAL)
 #define MSG_LVL_HIGH			(MSG_LEGACY_HIGH | MSG_LVL_ERROR)
@@ -109,10 +107,8 @@ the appropriate macros. */
 
 #define MSG_LVL_NONE			0
 
-/* This needs to be modified manually now, when we add
- a new RANGE of SSIDs to the msg_mask_tbl */
 #define MSG_MASK_TBL_CNT		24
-#define EVENT_LAST_ID			0x099F
+#define EVENT_LAST_ID			0x08C5
 
 #define MSG_SSID_0			0
 #define MSG_SSID_0_LAST			93
@@ -135,7 +131,7 @@ the appropriate macros. */
 #define MSG_SSID_9			5500
 #define MSG_SSID_9_LAST			5516
 #define MSG_SSID_10			6000
-#define MSG_SSID_10_LAST		6080
+#define MSG_SSID_10_LAST		6072
 #define MSG_SSID_11			6500
 #define MSG_SSID_11_LAST		6521
 #define MSG_SSID_12			7000
@@ -159,7 +155,7 @@ the appropriate macros. */
 #define MSG_SSID_21			10300
 #define MSG_SSID_21_LAST		10300
 #define MSG_SSID_22			10350
-#define MSG_SSID_22_LAST		10374
+#define MSG_SSID_22_LAST		10361
 #define MSG_SSID_23			0xC000
 #define MSG_SSID_23_LAST		0xC063
 
@@ -525,14 +521,6 @@ static const uint32_t msg_bld_masks_10[] =  {
 	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
 	MSG_LVL_LOW
 };
 
@@ -694,26 +682,12 @@ static const uint32_t msg_bld_masks_22[] = {
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
-	MSG_LVL_LOW,
 	MSG_LVL_LOW
 };
 
-/* LOG CODES */
 
 #define LOG_0	0x0
-#define LOG_1	0x1750
+#define LOG_1	0x1636
 #define LOG_2	0x0
 #define LOG_3	0x0
 #define LOG_4	0x4910

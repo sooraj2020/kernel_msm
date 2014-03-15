@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -121,7 +121,6 @@ enum vcd_perf_level {
 
 #define VCD_METADATA_EXT_DATA       0x0800
 #define VCD_METADATA_USER_DATA      0x1000
-#define VCD_METADATA_SEPARATE_BUF   0x2000
 
 struct vcd_property_meta_data_enable {
 	u32 meta_data_enable_flag;
@@ -151,8 +150,7 @@ enum vcd_yuv_buffer_format {
 	VCD_BUFFER_FORMAT_NV12      = 0x1,
 	VCD_BUFFER_FORMAT_TILE_4x2    = 0x2,
 	VCD_BUFFER_FORMAT_NV12_16M2KA = 0x3,
-	VCD_BUFFER_FORMAT_TILE_1x1    = 0x4,
-	VCD_BUFFER_FORMAT_NV21_16M2KA = 0x5
+	VCD_BUFFER_FORMAT_TILE_1x1    = 0x4
 };
 
 struct vcd_property_buffer_format {
@@ -315,7 +313,7 @@ struct vcd_property_vop_timing {
 };
 
 struct vcd_property_vop_timing_constant_delta {
-	u32 constant_delta; /*In usecs */
+	u32 constant_delta; 
 };
 
 struct vcd_property_short_header {

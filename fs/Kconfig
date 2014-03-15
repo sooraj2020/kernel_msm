@@ -103,6 +103,7 @@ menu "DOS/FAT/NT Filesystems"
 
 source "fs/fat/Kconfig"
 source "fs/ntfs/Kconfig"
+source "fs/exfat/Kconfig"
 
 endmenu
 endif # BLOCK
@@ -224,6 +225,7 @@ source "fs/pstore/Kconfig"
 source "fs/sysv/Kconfig"
 source "fs/ufs/Kconfig"
 source "fs/exofs/Kconfig"
+source "fs/f2fs/Kconfig"
 
 endif # MISC_FILESYSTEMS
 
@@ -279,5 +281,26 @@ endif # NETWORK_FILESYSTEMS
 
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
+
+config EXFAT_FS
+	tristate "exFAT file system support"
+	select NLS
+	help
+	  exFAT is the interoperable file system of choice by Microsoft.
+
+config EXFAT_PATH
+	string "Tuxera EXFAT folder"
+	depends on EXFAT_FS
+	default "texfat"
+
+config EXFAT_VERSION
+	string "Tuxera EXFAT version"
+	depends on EXFAT_FS
+	default "target/htc.d/htc"
+
+config ASYNC_FSYNC
+	bool
+	string "asynchronous fsync"
+	default n
 
 endmenu

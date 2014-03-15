@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,12 +19,16 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/cdc.h>
 
-#define MAX_RMNET_DEVS		4
-#define CTRL_DEV_MAX_LEN	10
+#define CTRL_DEV_MAX_LEN 10
+
+#define HTC_LOG_RMNET_USB_CTRL
+#define HTC_DEBUG_QMI_STUCK
+#define HTC_MDM_RESTART_IF_RMNET_OPEN_TIMEOUT
+#define RMNET_OPEN_TIMEOUT_MS	30000
 
 struct rmnet_ctrl_dev {
 
-	/*for debugging purpose*/
+	
 	char			name[CTRL_DEV_MAX_LEN];
 
 	struct cdev		cdev;
@@ -40,6 +44,10 @@ struct rmnet_ctrl_dev {
 	void			*intbuf;
 	struct usb_ctrlrequest	*in_ctlreq;
 
+#ifdef HTC_DEBUG_QMI_STUCK
+	struct timer_list rcv_timer;
+#endif	
+
 	spinlock_t		rx_lock;
 	struct mutex		dev_lock;
 	struct list_head	rx_list;
@@ -53,22 +61,21 @@ struct rmnet_ctrl_dev {
 
 	bool			is_connected;
 
-	/*
-	 * track first resp available from mdm when it boots up
-	 * to avoid bigger  timeout value used by qmuxd
-	 */
-	bool			resp_available;
+#ifdef HTC_MDM_RESTART_IF_RMNET_OPEN_TIMEOUT
+	unsigned long  connected_jiffies;
+#endif	
 
-	bool			claimed;
+	
+	unsigned int		cbits_tolocal;
+
+	
+	unsigned int		cbits_tomdm;
+
+	bool			resp_available;
 
 	unsigned int		mdm_wait_timeout;
 
-	/*input control lines (DSR, CTS, CD, RI)*/
-	unsigned int		cbits_tolocal;
-	/*output control lines (DTR, RTS)*/
-	unsigned int		cbits_tomdm;
-
-	/*counters*/
+	
 	unsigned int		snd_encap_cmd_cnt;
 	unsigned int		get_encap_resp_cnt;
 	unsigned int		resp_avail_cnt;
@@ -78,14 +85,15 @@ struct rmnet_ctrl_dev {
 	unsigned int		zlp_cnt;
 };
 
+extern struct rmnet_ctrl_dev *ctrl_dev[];
+
 extern int rmnet_usb_ctrl_start_rx(struct rmnet_ctrl_dev *);
 extern int rmnet_usb_ctrl_suspend(struct rmnet_ctrl_dev *dev);
-extern int rmnet_usb_ctrl_init(int num_devs, int insts_per_dev);
-extern void rmnet_usb_ctrl_exit(int num_devs, int insts_per_dev);
+extern int rmnet_usb_ctrl_init(void);
+extern void rmnet_usb_ctrl_exit(void);
 extern int rmnet_usb_ctrl_probe(struct usb_interface *intf,
-				struct usb_host_endpoint *int_in,
-				unsigned long rmnet_devnum,
-				struct rmnet_ctrl_dev **ctrldev);
+		struct usb_host_endpoint *status,
+		struct rmnet_ctrl_dev *dev);
 extern void rmnet_usb_ctrl_disconnect(struct rmnet_ctrl_dev *);
 
-#endif /* __RMNET_USB_H*/
+#endif 

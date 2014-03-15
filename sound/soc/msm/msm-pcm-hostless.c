@@ -18,6 +18,11 @@
 #include <sound/soc.h>
 #include <sound/pcm.h>
 
+#undef pr_info
+#undef pr_err
+#define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+
 static struct snd_pcm_ops msm_pcm_hostless_ops = {};
 
 static struct snd_soc_platform_driver msm_soc_hostless_platform = {

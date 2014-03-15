@@ -181,19 +181,22 @@ config LEDS_PMIC_MPP
 	  To compile this driver as a module, choose M here: the
 	  module will be called leds-pmic-mpp.
 
-config LEDS_MSM_TRICOLOR
-        tristate "LED Support for Qualcomm tricolor LEDs"
-        depends on LEDS_CLASS && MSM_SMD
-        help
-          This option enables support for tricolor LEDs connected to
-	  to Qualcomm reference boards. Red, green and blue color leds
-	  are supported. These leds are turned on/off, blink on/off
-	  by Modem upon receiving command through rpc from this driver.
+config LEDS_GPIO_PLATFORM
+	bool "Platform device bindings for GPIO LEDs"
+	depends on LEDS_GPIO
+	default y
+	help
+	  Let the leds-gpio driver drive LEDs which have been defined as
+	  platform devices.  If you don't know what this means, say yes.
 
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called leds-msm-tricolor.
+config LEDS_GPIO_OF
+	bool "OpenFirmware platform device bindings for GPIO LEDs"
+	depends on LEDS_GPIO && OF_DEVICE
+	default y
+	help
+	  Let the leds-gpio driver drive LEDs which have been defined as
+	  of_platform devices.  For instance, LEDs which are listed in a "dts"
+	  file.
 
 config LEDS_LP3944
 	tristate "LED Support for N.S. LP3944 (Fun Light) I2C chip"
@@ -221,6 +224,16 @@ config LEDS_LP5521
 	  LP5521 LED driver. It is 3 channel chip with programmable engines.
 	  Driver provides direct control via LED class and interface for
 	  programming the engines.
+
+config LEDS_LP5521_HTC
+        tristate "LED Support for N.S. LP5521 LED driver chip"
+        depends on LEDS_CLASS && I2C
+        help
+          If you say yes here you get support for the National Semiconductor
+          LP5521 LED driver. It is 3 channel chip with programmable engines.
+          Driver provides direct control via LED class and interface for
+          programming the engines.
+
 
 config LEDS_LP5523
 	tristate "LED Support for N.S. LP5523 LED driver chip"
@@ -282,6 +295,33 @@ config LEDS_PM8XXX
 	  To compile this driver as a module, choose M here: the module will
 	  be called leds-pmic8xxx.
 
+config LEDS_PM8921
+        tristate "LED Support for Qualcomm PMIC8921"
+        depends on MFD_PM8XXX
+        help
+          This option enables support for LEDs connected over PMIC8XXX
+          (Power Management IC) chip on Qualcomm reference boards,
+          for example SURF and FFAs.
+
+          To compile this driver as a module, choose M here: the module will
+          be called leds-pmic8921.
+
+config LEDS_PM8038
+        tristate "LED Support for Qualcomm PMIC8038"
+        depends on MFD_PM8XXX
+        help
+          This option enables support for LEDs connected over PMIC8XXX
+          (Power Management IC) chip on Qualcomm reference boards,
+          for example SURF and FFAs.
+
+          To compile this driver as a module, choose M here: the module will
+          be called leds-pmic8038.
+
+config PM8038_LED_SYNC
+        tristate "Button Backlight LED Sync for Qualcomm PMIC8038"
+        depends on MFD_PM8XXX
+        help
+
 config LEDS_PCA9633
 	tristate "LED support for PCA9633 I2C chip"
 	depends on LEDS_CLASS
@@ -290,15 +330,12 @@ config LEDS_PCA9633
 	  This option enables support for LEDs connected to the PCA9633
 	  LED driver chip accessed via the I2C bus.
 
-config LEDS_QPNP
-	tristate "Support for QPNP LEDs"
-	depends on SPMI && OF_SPMI
+config BACKLIGHT_WLED_CABC
+	bool "Select WLED CABC for PMIC backlight control"
+	depends on LEDS_PM8038
+	default n
 	help
-	  This driver supports the leds functionality of Qualcomm PNP PMIC.  It
-	  includes RGB Leds, WLED and Flash Led.
-
-	  To compile this driver as a module, choose M here: the module will
-	  be called leds-qpnp.
+	  This option selects the WLED CABC path for PMIC backlight control.
 
 config LEDS_WM831X_STATUS
 	tristate "LED support for status LEDs on WM831x PMICs"
@@ -371,6 +408,13 @@ config LEDS_PMIC8058
 	  This option enables support for LEDs connected over PMIC8058
 	  (Power Management IC) chip on Qualcomm reference boards,
 	  for example SURF and FFAs.
+
+config LEDS_PM8058
+	tristate "LED Support for PM8058"
+	depends on PMIC8058_PWM
+	help
+	  This option enables support for LEDs connected to PM8058
+	  LED driver chips accessed via the SSBI bus and rpc.
 
 config LEDS_INTEL_SS4200
 	tristate "LED driver for Intel NAS SS4200 series"
@@ -558,6 +602,18 @@ config LEDS_TRIGGER_DEFAULT_ON
 	help
 	  This allows LEDs to be initialised in the ON state.
 	  If unsure, say Y.
+
+config FLASHLIGHT_TPS61310
+        tristate "TI TPS61310 flashlight"
+        help
+          Say Y here to enable the TI TPS61310 flashlight
+
+config FLASHLIGHT_1500mA
+	bool "FLASHLIGHT_1500mA"
+	depends on FLASHLIGHT_TPS61310
+	default n
+        help
+          Say Y here to enable the TI TPS61310 flashlight
 
 config LEDS_TRIGGER_SLEEP
 	tristate "LED Sleep Mode Trigger"

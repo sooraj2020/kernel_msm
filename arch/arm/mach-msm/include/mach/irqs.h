@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -36,8 +36,6 @@
 #include "irqs-8064.h"
 #endif
 
-/* For now, use the maximum number of interrupts until a pending GIC issue
- * is sorted out */
 #define NR_MSM_IRQS 288
 #define NR_GPIO_IRQS 152
 #define NR_PM8921_IRQS 256
@@ -53,7 +51,7 @@
 #define NR_BOARD_IRQS (NR_PM8921_IRQS + NR_PM8821_IRQS + \
 		NR_WCD9XXX_IRQS + NR_GPIO_EXPANDER_IRQS)
 #endif
-#define NR_TLMM_MSM_DIR_CONN_IRQ 8 /*Need to Verify this Count*/
+#define NR_TLMM_MSM_DIR_CONN_IRQ 8 
 #define NR_MSM_GPIOS NR_GPIO_IRQS
 
 #else
@@ -64,8 +62,6 @@
 #include "irqs-9615.h"
 #elif defined(CONFIG_ARCH_MSM9625)
 #include "irqs-9625.h"
-#elif defined(CONFIG_ARCH_MSM8226)
-#include "irqs-8226.h"
 #elif defined(CONFIG_ARCH_MSM7X30)
 #include "irqs-7x30.h"
 #elif defined(CONFIG_ARCH_QSD8X50)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -83,6 +83,25 @@ int msm_gpiomux_get(unsigned gpio)
 }
 EXPORT_SYMBOL(msm_gpiomux_get);
 
+int msm_gpiomux_read(unsigned gpio)
+{
+	unsigned long irq_flags;
+	unsigned ret = 0;
+
+	if (!msm_gpiomux_recs)
+		return -EFAULT;
+
+	if (gpio >= msm_gpiomux_ngpio)
+		return -EINVAL;
+
+	spin_lock_irqsave(&gpiomux_lock, irq_flags);
+		ret = __msm_gpiomux_read(gpio);
+	spin_unlock_irqrestore(&gpiomux_lock, irq_flags);
+
+	return ret;
+}
+EXPORT_SYMBOL(msm_gpiomux_read);
+
 int msm_gpiomux_put(unsigned gpio)
 {
 	struct msm_gpiomux_rec *rec = msm_gpiomux_recs + gpio;
@@ -116,9 +135,6 @@ int msm_gpiomux_init(size_t ngpio)
 	if (!msm_gpiomux_recs)
 		return -ENOMEM;
 
-	/* There is no need to zero this memory, as clients will be blindly
-	 * installing settings on top of it.
-	 */
 	msm_gpiomux_sets = kmalloc(sizeof(struct gpiomux_setting) * ngpio *
 		GPIOMUX_NSETTINGS, GFP_KERNEL);
 	if (!msm_gpiomux_sets) {

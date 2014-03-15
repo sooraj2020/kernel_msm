@@ -66,3 +66,8 @@ obj-$(CONFIG_BRCMSMAC)	+= brcm80211/
 
 obj-$(CONFIG_LIBRA_SDIOIF)	+= libra/
 obj-$(CONFIG_WCNSS_CORE)	+= wcnss/
+obj-$(CONFIG_BCMDHD_4330)   += bcmdhd_4330/
+obj-$(CONFIG_BCMDHD_4334)   += bcmdhd_4334/
+obj-$(CONFIG_BCMDHD_4335)   += bcmdhd_4335/
+obj-$(CONFIG_BCMDHD_4335_MCC)   += bcmdhd_4335_mcc/
+obj-$(CONFIG_BCMDHD_4334_MCC)   += bcmdhd_4334_mcc/

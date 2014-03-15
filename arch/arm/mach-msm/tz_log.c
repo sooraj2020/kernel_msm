@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,139 +20,58 @@
 #include <linux/types.h>
 #include <asm/uaccess.h>
 
+#include <mach/scm.h>
+#include <mach/msm_iomap.h>
+
 #define DEBUG_MAX_RW_BUF 4096
 
-/*
- * Preprocessor Definitions and Constants
- */
 #define TZBSP_CPU_COUNT 0x02
-/*
- * Number of VMID Tables
- */
 #define TZBSP_DIAG_NUM_OF_VMID 16
-/*
- * VMID Description length
- */
 #define TZBSP_DIAG_VMID_DESC_LEN 7
-/*
- * Number of Interrupts
- */
 #define TZBSP_DIAG_INT_NUM  32
-/*
- * Length of descriptive name associated with Interrupt
- */
 #define TZBSP_MAX_INT_DESC 16
-/*
- * VMID Table
- */
 struct tzdbg_vmid_t {
-	uint8_t vmid; /* Virtual Machine Identifier */
-	uint8_t desc[TZBSP_DIAG_VMID_DESC_LEN];	/* ASCII Text */
+	uint8_t vmid; 
+	uint8_t desc[TZBSP_DIAG_VMID_DESC_LEN];	
 };
-/*
- * Boot Info Table
- */
 struct tzdbg_boot_info_t {
-	uint32_t wb_entry_cnt;	/* Warmboot entry CPU Counter */
-	uint32_t wb_exit_cnt;	/* Warmboot exit CPU Counter */
-	uint32_t pc_entry_cnt;	/* Power Collapse entry CPU Counter */
-	uint32_t pc_exit_cnt;	/* Power Collapse exit CPU counter */
-	uint32_t warm_jmp_addr;	/* Last Warmboot Jump Address */
-	uint32_t spare;	/* Reserved for future use. */
+	uint32_t wb_entry_cnt;	
+	uint32_t wb_exit_cnt;	
+	uint32_t pc_entry_cnt;	
+	uint32_t pc_exit_cnt;	
+	uint32_t warm_jmp_addr;	
+	uint32_t spare;	
 };
-/*
- * Reset Info Table
- */
 struct tzdbg_reset_info_t {
-	uint32_t reset_type;	/* Reset Reason */
-	uint32_t reset_cnt;	/* Number of resets occured/CPU */
+	uint32_t reset_type;	
+	uint32_t reset_cnt;	
 };
-/*
- * Interrupt Info Table
- */
 struct tzdbg_int_t {
-	/*
-	 * Type of Interrupt/exception
-	 */
 	uint16_t int_info;
-	/*
-	 * Availability of the slot
-	 */
 	uint8_t avail;
-	/*
-	 * Reserved for future use
-	 */
 	uint8_t spare;
-	/*
-	 * Interrupt # for IRQ and FIQ
-	 */
 	uint32_t int_num;
-	/*
-	 * ASCII text describing type of interrupt e.g:
-	 * Secure Timer, EBI XPU. This string is always null terminated,
-	 * supporting at most TZBSP_MAX_INT_DESC characters.
-	 * Any additional characters are truncated.
-	 */
 	uint8_t int_desc[TZBSP_MAX_INT_DESC];
-	uint64_t int_count[TZBSP_CPU_COUNT]; /* # of times seen per CPU */
+	uint64_t int_count[TZBSP_CPU_COUNT]; 
 };
-/*
- * Diagnostic Table
- */
 struct tzdbg_t {
 	uint32_t magic_num;
 	uint32_t version;
-	/*
-	 * Number of CPU's
-	 */
 	uint32_t cpu_count;
-	/*
-	 * Offset of VMID Table
-	 */
 	uint32_t vmid_info_off;
-	/*
-	 * Offset of Boot Table
-	 */
 	uint32_t boot_info_off;
-	/*
-	 * Offset of Reset info Table
-	 */
 	uint32_t reset_info_off;
-	/*
-	 * Offset of Interrupt info Table
-	 */
 	uint32_t int_info_off;
-	/*
-	 * Ring Buffer Offset
-	 */
 	uint32_t ring_off;
-	/*
-	 * Ring Buffer Length
-	 */
 	uint32_t ring_len;
-	/*
-	 * VMID to EE Mapping
-	 */
 	struct tzdbg_vmid_t vmid_info[TZBSP_DIAG_NUM_OF_VMID];
-	/*
-	 * Boot Info
-	 */
 	struct tzdbg_boot_info_t  boot_info[TZBSP_CPU_COUNT];
-	/*
-	 * Reset Info
-	 */
 	struct tzdbg_reset_info_t reset_info[TZBSP_CPU_COUNT];
 	uint32_t num_interrupts;
 	struct tzdbg_int_t  int_info[TZBSP_DIAG_INT_NUM];
-	/*
-	 * We need at least 2K for the ring buffer
-	 */
-	uint8_t *ring_buffer;	/* TZ Ring Buffer */
+	uint8_t *ring_buffer;	
 };
 
-/*
- * Enumeration order for VMID's
- */
 enum tzdbg_stats_type {
 	TZDBG_BOOT = 0,
 	TZDBG_RESET,
@@ -186,10 +105,18 @@ static struct tzdbg tzdbg = {
 	.stat[TZDBG_LOG].name = "log",
 };
 
+#define TZ_SCM_LOG_PHYS		MSM_TZLOG_PHYS
+#define TZ_SCM_LOG_SIZE		MSM_TZLOG_SIZE
+#define INT_SIZE		4
 
-/*
- * Debugfs data structure and functions
- */
+struct htc_tzlog_dev {
+	char *buffer;
+	int *pw_cursor;
+	int *pr_cursor;
+};
+
+struct htc_tzlog_dev *htc_tzlog;
+
 
 static int _disp_tz_general_stats(void)
 {
@@ -346,6 +273,7 @@ static int _disp_tz_interrupt_stats(void)
 	return len;
 }
 
+#if 0
 static int _disp_tz_log_stats(void)
 {
 	int len = 0;
@@ -359,6 +287,67 @@ static int _disp_tz_log_stats(void)
 	tzdbg.stat[TZDBG_LOG].data = tzdbg.disp_buf;
 	return len;
 }
+#else
+static int _disp_tz_htc_log_stats(char __user *ubuf, size_t count, loff_t *offp)
+{
+	char *buf = htc_tzlog->buffer;
+	int *pw_cursor = htc_tzlog->pw_cursor;
+	int *pr_cursor = htc_tzlog->pr_cursor;
+	int r_cursor, w_cursor, ret;
+
+	if (buf != 0) {
+		
+		r_cursor = *pr_cursor;
+		w_cursor = *pw_cursor;
+
+		if (r_cursor < w_cursor) {
+			if ((w_cursor - r_cursor) > count) {
+				ret = copy_to_user(ubuf, buf + r_cursor, count);
+				if (ret == count)
+					return -EFAULT;
+
+				*pr_cursor = r_cursor + count;
+				return count;
+			} else {
+				ret = copy_to_user(ubuf, buf + r_cursor, (w_cursor - r_cursor));
+				if (ret == (w_cursor - r_cursor))
+					return -EFAULT;
+
+				*pr_cursor = w_cursor;
+				return (w_cursor - r_cursor);
+			}
+		}
+
+		if (r_cursor > w_cursor) {
+			int buf_end = TZ_SCM_LOG_SIZE - 2*INT_SIZE - 1;
+			int left_len = buf_end - r_cursor;
+
+			if (left_len > count) {
+				ret = copy_to_user(ubuf, buf + r_cursor, count);
+				if (ret == count)
+					return -EFAULT;
+
+				*pr_cursor = r_cursor + count;
+				return count;
+			} else {
+				ret = copy_to_user(ubuf, buf + r_cursor, left_len);
+				if (ret == left_len)
+					return -EFAULT;
+
+				*pr_cursor = 0;
+				return left_len;
+			}
+		}
+
+		if (r_cursor == w_cursor) {
+			pr_info("No New Trust Zone log\n");
+			return 0;
+		}
+	}
+
+	return 0;
+}
+#endif
 
 static ssize_t tzdbgfs_read(struct file *file, char __user *buf,
 	size_t count, loff_t *offp)
@@ -385,8 +374,12 @@ static ssize_t tzdbgfs_read(struct file *file, char __user *buf,
 		len = _disp_tz_vmid_stats();
 		break;
 	case TZDBG_LOG:
+#if 0
 		len = _disp_tz_log_stats();
 		break;
+#else
+		return _disp_tz_htc_log_stats(buf, count, offp);
+#endif
 	default:
 		break;
 	}
@@ -458,9 +451,6 @@ static void tzdbgfs_exit(struct platform_device *pdev)
 	debugfs_remove_recursive(dent_dir);
 }
 
-/*
- * Driver functions
- */
 static int __devinit tz_log_probe(struct platform_device *pdev)
 {
 	struct resource *resource;
@@ -468,20 +458,12 @@ static int __devinit tz_log_probe(struct platform_device *pdev)
 	uint32_t tzdiag_phy_iobase;
 	uint32_t *ptr = NULL;
 
-	/*
-	 * Get address that stores the physical location of 4KB
-	 * diagnostic data
-	 */
 	resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!resource) {
 		dev_err(&pdev->dev,
 				"%s: ERROR Missing MEM resource\n", __func__);
 		return -ENXIO;
 	};
-	/*
-	 * Map address that stores the physical location of 4KB
-	 * diagnostic data
-	 */
 	virt_iobase = devm_ioremap_nocache(&pdev->dev, resource->start,
 				resource->end - resource->start + 1);
 	if (!virt_iobase) {
@@ -491,14 +473,8 @@ static int __devinit tz_log_probe(struct platform_device *pdev)
 			(resource->end - resource->start + 1));
 		return -ENXIO;
 	}
-	/*
-	 * Retrieve the address of 4KB diagnostic data
-	 */
 	tzdiag_phy_iobase = readl_relaxed(virt_iobase);
 
-	/*
-	 * Map the 4KB diagnostic information area
-	 */
 	tzdbg.virt_iobase = devm_ioremap_nocache(&pdev->dev,
 				tzdiag_phy_iobase, DEBUG_MAX_RW_BUF);
 
@@ -517,6 +493,36 @@ static int __devinit tz_log_probe(struct platform_device *pdev)
 	}
 
 	tzdbg.diag_buf = (struct tzdbg_t *)ptr;
+
+	htc_tzlog = kzalloc(sizeof(struct htc_tzlog_dev), GFP_KERNEL);
+	if (!htc_tzlog) {
+		pr_err("%s: Can't Allocate memory: scm_dev\n", __func__);
+		return -ENOMEM;
+	}
+
+	htc_tzlog->buffer = devm_ioremap_nocache(&pdev->dev,
+		TZ_SCM_LOG_PHYS, TZ_SCM_LOG_SIZE);
+	if (htc_tzlog->buffer == NULL) {
+		pr_err("%s: ioremap fail...\n", __func__);
+		kfree(htc_tzlog);
+		return -EFAULT;
+	}
+
+	htc_tzlog->pr_cursor = (int *)((int)(htc_tzlog->buffer) +
+				 TZ_SCM_LOG_SIZE - 2*INT_SIZE);
+	htc_tzlog->pw_cursor = (int *)((int)(htc_tzlog->buffer) +
+				 TZ_SCM_LOG_SIZE - INT_SIZE);
+
+	pr_info("tzlog buffer address %x\n", TZ_SCM_LOG_PHYS);
+	memset(htc_tzlog->buffer, 0, TZ_SCM_LOG_SIZE);
+
+	secure_log_operation(0, 0, TZ_SCM_LOG_PHYS, 32 * 64, 0);
+
+	pr_info("[TZ] ---LOG START---\n");
+	pr_info("%s", htc_tzlog->buffer);
+	pr_info("[TZ] --- LOG END---\n");
+
+	secure_log_operation(TZ_SCM_LOG_PHYS, TZ_SCM_LOG_SIZE, 0, 0, 0);
 
 	if (tzdbgfs_init(pdev))
 		goto err;

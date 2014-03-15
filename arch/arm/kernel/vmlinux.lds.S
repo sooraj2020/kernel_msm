@@ -185,7 +185,6 @@ SECTIONS
 		INIT_SETUP(16)
 		INIT_CALLS
 		CON_INITCALL
-		COMPAT_EXPORTS
 		SECURITY_INITCALL
 		INIT_RAM_FS
 	}
@@ -239,7 +238,7 @@ SECTIONS
 		/*
 		 * The exception fixup table (might need resorting at runtime)
 		 */
-		. = ALIGN(4);
+		. = ALIGN(L1_CACHE_BYTES);
 		__start___ex_table = .;
 #ifdef CONFIG_MMU
 		*(__ex_table)

@@ -123,6 +123,7 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 obj-y				+= ieee802154/
+obj-y				+= felica/
 #common clk code
 obj-y				+= clk/
 
@@ -141,4 +142,7 @@ obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
 #MobiCore
 obj-$(CONFIG_MOBICORE_SUPPORT)  += gud/
 
-obj-$(CONFIG_CORESIGHT)		+= coresight/
+obj-$(CONFIG_MSM_QDSS)		+= coresight/
+
+# htc stability files
+obj-y += htc_debug/stability/
